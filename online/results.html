@@ -50,6 +50,25 @@
   .b-running{color:#30349b;font-weight:700;font-size:12px}
   .empty{padding:34px;text-align:center;color:#5d6780}
   .upd{margin-top:12px;color:#9aa2b8;font-size:11px;text-align:right}
+
+  /* Таблиця може горизонтально скролитись, якщо все одно не влазить. */
+  .tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+  /* --- Мобільний (екран до 560px) --- */
+  @media (max-width:560px){
+    body{padding:12px 8px}
+    .card{padding:14px;border-radius:16px}
+    h1{font-size:17px}
+    /* На вузькому екрані ховаємо найменш важливі колонки: № і Старт. */
+    .col-bib, .col-start{display:none}
+    th,td{padding:8px 8px;font-size:13px}
+    .rk{width:38px}
+    .ghead b{font-size:16px}
+    .tabs a{font-size:12px;padding:5px 9px}
+    .day button{padding:6px 11px;font-size:12px}
+    input.q{margin-left:0;max-width:none;flex:1 1 100%}
+    .upd{text-align:left}
+  }
 </style>
 </head>
 <body>
@@ -134,10 +153,11 @@ function dayLabel(d){
 }
 
 function groupNames(){
-  // Порядок із таблиці groups; групи без параметрів — у кінці за алфавітом.
-  const ordered = groups.map(g => g.name);
-  const extra = [...new Set(results.map(r => r.grp))].filter(g => !ordered.includes(g)).sort();
-  return [...ordered, ...extra].filter(g => results.some(r => r.grp === g));
+  // Усі групи, що мають учасників — завжди за алфавітом (українська локаль).
+  const all = new Set([...groups.map(g => g.name), ...results.map(r => r.grp)]);
+  return [...all]
+    .filter(g => results.some(r => r.grp === g))
+    .sort((a, b) => a.localeCompare(b, 'uk'));
 }
 
 function renderTabs(){
@@ -171,13 +191,13 @@ function render(){
   const dsq = list.filter(r => r.status==='dsq').length;
 
   $('content').innerHTML = head + `
-    <table>
+    <div class="tbl-scroll"><table>
       <thead><tr>
-        <th class="rk">Місце</th><th>Прізвище, ім'я</th><th>№</th>
-        <th>Команда</th><th>Старт</th><th>Час</th>
+        <th class="rk">Місце</th><th>Прізвище, ім'я</th><th class="col-bib">№</th>
+        <th>Команда</th><th class="col-start">Старт</th><th>Час</th>
       </tr></thead>
       <tbody>${list.map(rowHtml).join('')}</tbody>
-    </table>
+    </table></div>
     <p class="sub" style="margin-top:8px">Фінішували: ${fin} · на дистанції: ${run}${dsq?` · знято: ${dsq}`:''} · усього: ${list.length}</p>`;
 }
 
@@ -200,9 +220,9 @@ function rowHtml(r){
   return `<tr>
     <td class="rk">${rk}</td>
     <td>${esc(r.full_name)}</td>
-    <td>${r.bib||''}</td>
+    <td class="col-bib">${r.bib||''}</td>
     <td>${esc(r.team||'')}</td>
-    <td class="time" style="font-weight:400">${esc(r.start_time||'')}</td>
+    <td class="time col-start" style="font-weight:400">${esc(r.start_time||'')}</td>
     <td>${time}</td>
   </tr>`;
 }
