@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Онлайн результати</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Arial,sans-serif;color:#17182f;
+       background:radial-gradient(circle at top right,rgba(79,97,216,.16),transparent 34%),linear-gradient(180deg,#f6f9ff,#edf5ff);
+       min-height:100vh;padding:22px 14px}
+  .wrap{max-width:1100px;margin:0 auto}
+  .card{padding:20px;border:1px solid rgba(48,52,155,.14);border-radius:22px;
+        background:rgba(255,255,255,.82);box-shadow:0 14px 34px rgba(28,45,96,.08)}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+  h1{margin:0;font-size:20px}
+  .sub{margin:2px 0 0;color:#5d6780;font-size:12px}
+  .live{display:inline-flex;align-items:center;gap:6px;color:#2f9e5c;font-size:12px;font-weight:700}
+  .dot{width:8px;height:8px;border-radius:999px;background:#2f9e5c;animation:p 1.6s infinite}
+  @keyframes p{0%{box-shadow:0 0 0 0 rgba(47,158,92,.5)}70%{box-shadow:0 0 0 9px rgba(47,158,92,0)}100%{box-shadow:0 0 0 0 rgba(47,158,92,0)}}
+
+  .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0 6px}
+  .day{display:flex;gap:6px}
+  .day button{padding:7px 14px;border:1px solid rgba(48,52,155,.22);border-radius:10px;background:#fff;
+              color:#30349b;font-size:13px;font-weight:700;cursor:pointer}
+  .day button.on{background:linear-gradient(135deg,#222a92,#3d42c8);color:#fff;border-color:transparent}
+  input.q{margin-left:auto;padding:8px 12px;border:1px solid rgba(48,52,155,.22);border-radius:10px;
+          font-size:14px;flex:1 1 180px;max-width:280px}
+
+  .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px;padding-bottom:10px;
+        border-bottom:1px solid rgba(48,52,155,.12)}
+  .tabs a{padding:5px 11px;border-radius:999px;font-size:13px;text-decoration:none;cursor:pointer;
+          color:#30349b;background:#eef0fb;font-weight:700}
+  .tabs a.on{background:linear-gradient(135deg,#222a92,#3d42c8);color:#fff}
+
+  .ghead{margin:20px 0 8px;text-align:center}
+  .ghead b{color:#c0392b;font-size:17px}
+  .ghead span{color:#5d6780;font-size:13px}
+
+  table{width:100%;border-collapse:collapse;background:#fff;border-radius:14px;overflow:hidden;
+        box-shadow:0 8px 20px rgba(28,45,96,.06)}
+  th,td{padding:9px 12px;text-align:left;font-size:13px;border-bottom:1px solid #eef0fb}
+  th{background:#e9ecf6;color:#3a3f63;font-size:12px;font-weight:700}
+  tr:nth-child(even) td{background:#fafbff}
+  .rk{font-weight:900;width:46px;text-align:center}
+  .gold{color:#b8860b}.silver{color:#7a7a8c}.bronze{color:#a8682b}
+  .time{font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
+  .flag{color:#c0392b;font-weight:800;font-size:12px}
+  .b-running{color:#30349b;font-weight:700;font-size:12px}
+  .empty{padding:34px;text-align:center;color:#5d6780}
+  .upd{margin-top:12px;color:#9aa2b8;font-size:11px;text-align:right}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="top">
+      <div><h1 id="title">Онлайн результати</h1><p class="sub" id="meta">Завантаження…</p></div>
+      <span class="live"><span class="dot"></span>наживо</span>
+    </div>
+
+    <div class="bar">
+      <div class="day" id="days"></div>
+      <input class="q" id="q" placeholder="Пошук: ПІБ / команда…">
+    </div>
+
+    <div class="tabs" id="tabs"></div>
+    <div id="content"><div class="empty">Завантаження…</div></div>
+    <div class="upd" id="upd"></div>
+  </div>
+</div>
+
+<script>
+// ========================================================================
+//  Встав дані свого Supabase-проекту:
+//    Dashboard → Project Settings → API → Project URL + anon public ключ.
+//  anon-ключ публічний і безпечний (RLS дозволяє лише читання).
+// ========================================================================
+const SUPABASE_URL  = "https://ВАШ-ПРОЕКТ.supabase.co";
+const SUPABASE_ANON_KEY = "ВАШ-ANON-КЛЮЧ";
+
+// Порядок статусів у групі: фініш (за місцем) → біжать → зняті → не старт.
+// Порядок у групі: фініш (за місцем) → ще обробляються → біжать → зняті → не старт.
+const STATUS_ORDER = { finished:0, finished_pending:1, running:2, dnf:3, dsq:4, dns:5 };
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = id => document.getElementById(id);
+
+const params = new URLSearchParams(location.search);
+const eventId = params.get('event') || '';   // ?event=kyiv2025
+let day = Number(params.get('day')) || 1;     // ?day=1
+let activeGrp = '';      // '' = перша група за порядком
+let results = [], groups = [], event = null, eventDays = [];
+
+async function load(){
+  if (!eventId){
+    $('content').innerHTML = '<div class="empty">Не вказано змагання. Додай у посилання <b>?event=&lt;id&gt;&amp;day=1</b>.</div>';
+    $('meta').textContent = '';
+    return;
+  }
+  const [rRes, rGrp, rEv, rDays] = await Promise.all([
+    sb.from('results').select('*').eq('event', eventId).eq('day', day),
+    sb.from('groups').select('*').eq('event', eventId).eq('day', day).order('ord'),
+    sb.from('events').select('*').eq('id', eventId).maybeSingle(),
+    sb.from('event_days').select('*').eq('event', eventId).order('ord'),
+  ]);
+  const err = rRes.error || rGrp.error || rEv.error || rDays.error;
+  if (err){ $('content').innerHTML = `<div class="empty">Помилка: ${err.message}</div>`; return; }
+  results = rRes.data || []; groups = rGrp.data || [];
+  event = rEv.data || null; eventDays = rDays.data || [];
+  renderHeader(); renderDays(); renderTabs(); render(); touch();
+}
+
+function renderHeader(){
+  $('title').textContent = event?.title || 'Онлайн результати';
+}
+
+// Динамічний перемикач днів — кнопки з таблиці event_days.
+function renderDays(){
+  if (!eventDays.length){ $('days').innerHTML = ''; return; }
+  $('days').innerHTML = eventDays.map(d =>
+    `<button data-day="${d.day}" class="${d.day===day?'on':''}">${esc(dayLabel(d))}</button>`).join('');
+  $('days').querySelectorAll('button').forEach(btn => btn.onclick = () => {
+    day = Number(btn.dataset.day);
+    // Оновлюємо URL (щоб посилання на день можна було скопіювати/поділитися).
+    const u = new URL(location); u.searchParams.set('day', day); history.replaceState(null, '', u);
+    activeGrp = ''; load();
+  });
+}
+
+function dayLabel(d){
+  return d.label ? `День ${d.day} · ${d.label}` : `День ${d.day}`;
+}
+
+function groupNames(){
+  // Порядок із таблиці groups; групи без параметрів — у кінці за алфавітом.
+  const ordered = groups.map(g => g.name);
+  const extra = [...new Set(results.map(r => r.grp))].filter(g => !ordered.includes(g)).sort();
+  return [...ordered, ...extra].filter(g => results.some(r => r.grp === g));
+}
+
+function renderTabs(){
+  const names = groupNames();
+  if (!names.includes(activeGrp)) activeGrp = names[0] || '';
+  $('tabs').innerHTML = names.map(n =>
+    `<a data-grp="${esc(n)}" class="${n===activeGrp?'on':''}">${esc(n)}</a>`).join('');
+  $('tabs').querySelectorAll('a').forEach(a =>
+    a.onclick = () => { activeGrp = a.dataset.grp; renderTabs(); render(); });
+}
+
+function render(){
+  const q = $('q').value.trim().toLowerCase();
+  let list = results.filter(r => r.grp === activeGrp);
+  if (q) list = list.filter(r =>
+    (r.full_name||'').toLowerCase().includes(q) ||
+    (r.team||'').toLowerCase().includes(q) ||
+    (r.club||'').toLowerCase().includes(q));
+
+  if (!list.length){ $('content').innerHTML = '<div class="empty">Немає даних у цій групі</div>'; return; }
+
+  list.sort(cmp);
+  const g = groups.find(x => x.name === activeGrp);
+  const head = g
+    ? `<div class="ghead"><b>${esc(activeGrp)}</b> &nbsp;
+         <span>${g.controls?`${g.controls} КП`:''} ${g.distance_km?`&nbsp; ${g.distance_km} км`:''}</span></div>`
+    : `<div class="ghead"><b>${esc(activeGrp)}</b></div>`;
+
+  const fin = list.filter(r => r.status==='finished' || r.status==='finished_pending').length;
+  const run = list.filter(r => r.status==='running').length;
+  const dsq = list.filter(r => r.status==='dsq').length;
+
+  $('content').innerHTML = head + `
+    <table>
+      <thead><tr>
+        <th class="rk">Місце</th><th>Прізвище, ім'я</th><th>№</th>
+        <th>Команда</th><th>Старт</th><th>Час</th>
+      </tr></thead>
+      <tbody>${list.map(rowHtml).join('')}</tbody>
+    </table>
+    <p class="sub" style="margin-top:8px">Фінішували: ${fin} · на дистанції: ${run}${dsq?` · знято: ${dsq}`:''} · усього: ${list.length}</p>`;
+}
+
+function rowHtml(r){
+  let rk = '', time = '';
+  if (r.status === 'finished'){
+    rk = `<span class="${['','gold','silver','bronze'][r.rk]||''}">${r.rk||''}</span>`;
+    time = `<span class="time">${esc(r.result_time||'')}</span>`;
+  } else if (r.status === 'finished_pending'){
+    // Фінішував, місце ще рахується — показуємо час, але без номера місця.
+    time = `<span class="time">${esc(r.result_time||'')}</span> <span class="b-running" style="font-size:11px">(обробка)</span>`;
+  } else if (r.status === 'running'){
+    time = `<span class="b-running">на дистанції</span>`;
+  } else if (r.status === 'dsq'){
+    // Показуємо причину з U_DAL ("MP", "DNS"…), як на бланку.
+    time = `<span class="flag">${esc(r.reason || 'зн.')}</span>`;
+  } else if (r.status === 'dns'){
+    time = `<span class="b-running" style="color:#9aa2b8">не старт.</span>`;
+  }
+  return `<tr>
+    <td class="rk">${rk}</td>
+    <td>${esc(r.full_name)}</td>
+    <td>${r.bib||''}</td>
+    <td>${esc(r.team||'')}</td>
+    <td class="time" style="font-weight:400">${esc(r.start_time||'')}</td>
+    <td>${time}</td>
+  </tr>`;
+}
+
+function cmp(a,b){
+  const sa = STATUS_ORDER[a.status] ?? 9, sb_ = STATUS_ORDER[b.status] ?? 9;
+  if (sa !== sb_) return sa - sb_;
+  if (a.status==='finished'){
+    if (a.rk && b.rk) return a.rk - b.rk;
+    return (a.result_seconds ?? 1e9) - (b.result_seconds ?? 1e9);
+  }
+  if (a.status==='finished_pending')   // ще без місця — за часом
+    return (a.result_seconds ?? 1e9) - (b.result_seconds ?? 1e9);
+  return (a.start_time||'').localeCompare(b.start_time||'');
+}
+
+function esc(s){ return String(s).replace(/[&<>"]/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function touch(){
+  const last = results.reduce((m,r)=> r.updated_at>m? r.updated_at:m, '');
+  $('upd').textContent = last ? 'Оновлено: ' + new Date(last).toLocaleTimeString('uk-UA') : '';
+  const sub = event?.subtitle ? event.subtitle + ' · ' : '';
+  $('meta').textContent = `${sub}День ${day} · учасників: ${results.length}`;
+}
+
+$('q').addEventListener('input', render);
+
+load();
+
+// Realtime (якщо увімкнено в Supabase) + запасне опитування раз на 10 с.
+sb.channel('live')
+  .on('postgres_changes', { event:'*', schema:'public', table:'results' }, load)
+  .subscribe();
+setInterval(load, 10000);
+</script>
+</body>
+</html>

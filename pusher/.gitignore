@@ -1,0 +1,5 @@
+# НЕ викладати на GitHub — містить service_role-ключ (повний доступ до БД)!
+appsettings.json
+
+bin/
+obj/
