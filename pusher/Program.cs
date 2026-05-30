@@ -95,6 +95,8 @@ while (true)
             var key = $"{ev.Id}:{d.Day}";
             try
             {
+                // Параметри груп (GRUPA.DBF) шлемо для КОЖНОГО дня один раз —
+                // вони потрібні в БД для всіх днів (вкладки, КП, довжина).
                 if (!metaSent.Contains(key))
                 {
                     var groups = ReadGroups(ev, d);
@@ -104,6 +106,11 @@ while (true)
                         metaSent.Add(key);
                     }
                 }
+
+                // Результати щотакту читаємо/шлемо лише для активного дня (якщо
+                // ActiveDay задано). Інші дні вже залиті — їх не чіпаємо, щоб не
+                // ганяти зайві дані кожні N секунд. Без ActiveDay — як раніше, усі.
+                if (ev.ActiveDay is int act && d.Day != act) continue;
 
                 var results = ReadResults(ev, d);
                 if (results.Count > 0)
@@ -364,6 +371,7 @@ class EventConfig
     public string Subtitle { get; set; } = "";
     public string BasePath { get; set; } = "";  // тека змагання
     public bool Standings { get; set; } = false; // вмикає бали + вкладку «Сума» на сторінці
+    public int? ActiveDay { get; set; } = null;  // якщо задано — щотакту шлемо результати ЛИШЕ цього дня
     public List<DayConfig> Days { get; set; } = new();
 
     // Якщо Days не задано — автоматично знаходимо підтеки D_1..D_n з OLD.DBF.

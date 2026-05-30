@@ -18,6 +18,8 @@
   .sub{margin:2px 0 0;color:#5d6780;font-size:12px}
   .live{display:inline-flex;align-items:center;gap:6px;color:#2f9e5c;font-size:12px;font-weight:700}
   .dot{width:8px;height:8px;border-radius:999px;background:#2f9e5c;animation:p 1.6s infinite}
+  .live.off{color:#9aa2b8}
+  .live.off .dot{background:#9aa2b8;animation:none}
   @keyframes p{0%{box-shadow:0 0 0 0 rgba(47,158,92,.5)}70%{box-shadow:0 0 0 9px rgba(47,158,92,0)}100%{box-shadow:0 0 0 0 rgba(47,158,92,0)}}
 
   .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0 6px}
@@ -84,12 +86,12 @@
   <div class="card">
     <div class="top">
       <div><h1 id="title">Онлайн результати</h1><p class="sub" id="meta">Завантаження…</p></div>
-      <span class="live"><span class="dot"></span>наживо</span>
+      <span class="live" id="live"><span class="dot"></span>наживо</span>
     </div>
 
     <div class="bar">
       <div class="day" id="days"></div>
-      <input class="q" id="q" placeholder="Пошук: ПІБ / команда…">
+      <input class="q" id="q" placeholder="Пошук: ПІБ / команда / №…">
     </div>
 
     <div class="tabs" id="tabs"></div>
@@ -114,6 +116,12 @@ const STATUS_ORDER = { finished:0, finished_pending:1, running:2, dnf:3, dsq:4, 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const $ = id => document.getElementById(id);
 
+// Тягнемо лише ті колонки, що реально показує/використовує сторінка
+// (не *), щоб зменшити трафік. Пропущені: finish_time, region, birth, qual.
+const RES_COLS  = 'bib,grp,day,rk,full_name,team,club,status,reason,start_time,result_time,result_seconds,points,updated_at';
+// Для «Суми» час старту/команда в деталях не критичні, але лишаємо team для пошуку.
+const GRP_COLS  = 'name,controls,distance_km,ord';
+
 const params = new URLSearchParams(location.search);
 const eventId = params.get('event') || '';   // ?event=kyiv2025
 let day = Number(params.get('day')) || 1;     // ?day=1
@@ -122,35 +130,82 @@ let sumMode = params.get('sum') === '1';       // ?sum=1 — одразу від
 let results = [], groups = [], event = null, eventDays = [];
 let allResults = [];     // результати ВСІХ днів (для режиму «Сума»)
 
+// --- Авто-офлайн: якщо час останньої синхронізації не змінюється N опитувань
+//     поспіль — вважаємо змагання завершеним, спиняємо polling+realtime.
+//     Поновлення — лише перезавантаженням сторінки (F5).
+const STALE_LIMIT = 4;   // скільки опитувань поспіль без змін → офлайн
+let lastSync = null;     // макс updated_at з останнього непорожнього опитування
+let staleCount = 0;
+let offline = false;
+let pollTimer = null, liveChannel = null;
+
 async function load(){
   if (!eventId){
     $('content').innerHTML = '<div class="empty">Не вказано змагання. Додай у посилання <b>?event=&lt;id&gt;&amp;day=1</b>.</div>';
     $('meta').textContent = '';
     return;
   }
-  const [rRes, rGrp, rEv, rDays] = await Promise.all([
-    sb.from('results').select('*').eq('event', eventId).eq('day', day),
-    sb.from('groups').select('*').eq('event', eventId).eq('day', day).order('ord'),
-    sb.from('events').select('*').eq('id', eventId).maybeSingle(),
-    sb.from('event_days').select('*').eq('event', eventId).order('ord'),
+  // Легкі метадані: групи дня (для вкладок/КП), саме змагання, дні.
+  const [rGrp, rEv, rDays] = await Promise.all([
+    sb.from('groups').select(GRP_COLS).eq('event', eventId).eq('day', day).order('ord'),
+    sb.from('events').select('id,title,subtitle,standings').eq('id', eventId).maybeSingle(),
+    sb.from('event_days').select('day,label,ord').eq('event', eventId).order('ord'),
   ]);
-  const err = rRes.error || rGrp.error || rEv.error || rDays.error;
+  const err = rGrp.error || rEv.error || rDays.error;
   if (err){ $('content').innerHTML = `<div class="empty">Помилка: ${err.message}</div>`; return; }
-  results = rRes.data || []; groups = rGrp.data || [];
+  groups = rGrp.data || [];
   event = rEv.data || null; eventDays = rDays.data || [];
 
   // Залік доступний лише коли увімкнено standings — інакше скидаємо режим.
   if (!event?.standings) sumMode = false;
 
-  // Для режиму «Сума» потрібні результати всіх днів (а не лише поточного).
-  if (event?.standings){
-    const rAll = await sb.from('results').select('*').eq('event', eventId);
+  // Визначаємо активну групу ДО завантаження її результатів.
+  const names = groupNames();
+  if (!names.includes(activeGrp)) activeGrp = names[0] || '';
+
+  if (sumMode){
+    // Режим «Сума»: тягнемо лише активну групу, але за ВСІ дні.
+    const rAll = await sb.from('results').select(RES_COLS)
+      .eq('event', eventId).eq('grp', activeGrp);
     allResults = rAll.error ? [] : (rAll.data || []);
+    results = allResults.filter(r => r.day === day);
   } else {
+    // Звичайний режим: тягнемо лише відкриту групу поточного дня.
     allResults = [];
+    results = activeGrp ? await fetchGroup(activeGrp) : [];
   }
 
+  checkStale();
   renderHeader(); renderDays(); renderTabs(); render(); touch();
+}
+
+// Результати однієї групи поточного дня (лише потрібні колонки).
+async function fetchGroup(grp){
+  const r = await sb.from('results').select(RES_COLS)
+    .eq('event', eventId).eq('day', day).eq('grp', grp);
+  return r.error ? [] : (r.data || []);
+}
+
+// Стежимо за «свіжістю»: якщо макс updated_at не змінився STALE_LIMIT разів
+// поспіль — змагання, найімовірніше, завершене → переходимо в офлайн.
+function checkStale(){
+  const src = (allResults.length ? allResults : results);
+  const cur = src.reduce((m, r) => r.updated_at > m ? r.updated_at : m, '');
+  if (!cur) return;                       // ще немає даних — не рахуємо стейл
+  if (lastSync === null){ lastSync = cur; staleCount = 0; return; }
+  if (cur === lastSync){
+    if (++staleCount >= STALE_LIMIT) goOffline();
+  } else {
+    lastSync = cur; staleCount = 0;
+  }
+}
+
+function goOffline(){
+  if (offline) return;
+  offline = true;
+  if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
+  if (liveChannel){ sb.removeChannel(liveChannel); liveChannel = null; }
+  touch();
 }
 
 function renderHeader(){
@@ -168,18 +223,20 @@ function renderDays(){
   $('days').innerHTML = html;
 
   $('days').querySelectorAll('button[data-day]').forEach(btn => btn.onclick = () => {
+    if (!sumMode && Number(btn.dataset.day) === day) return;
     sumMode = false;
     day = Number(btn.dataset.day);
     // Оновлюємо URL (щоб посилання на день можна було скопіювати/поділитися).
     const u = new URL(location); u.searchParams.set('day', day); u.searchParams.delete('sum');
     history.replaceState(null, '', u);
-    renderDays(); renderTabs(); render(); touch();
+    load();   // інший день → дотягуємо його дані
   });
   const sumBtn = $('days').querySelector('button[data-sum]');
   if (sumBtn) sumBtn.onclick = () => {
+    if (sumMode) return;
     sumMode = true;
     const u = new URL(location); u.searchParams.set('sum', '1'); history.replaceState(null, '', u);
-    renderDays(); renderTabs(); render(); touch();
+    load();   // режим суми → дотягуємо всі дні активної групи
   };
 }
 
@@ -188,12 +245,10 @@ function dayLabel(d){
 }
 
 function groupNames(){
-  // Усі групи, що мають учасників — завжди за алфавітом (українська локаль).
-  // У режимі «Сума» беремо групи з усіх днів (allResults), інакше — з поточного.
-  const src = sumMode ? allResults : results;
-  const all = new Set([...groups.map(g => g.name), ...src.map(r => r.grp)]);
-  return [...all]
-    .filter(g => src.some(r => r.grp === g))
+  // Вкладки = групи дня з таблиці groups (за алфавітом, українська локаль).
+  // Тепер results тягнемо лише для активної групи, тож перелік груп беремо
+  // з легкої таблиці groups, а не з результатів.
+  return [...new Set(groups.map(g => g.name))]
     .sort((a, b) => a.localeCompare(b, 'uk'));
 }
 
@@ -203,7 +258,27 @@ function renderTabs(){
   $('tabs').innerHTML = names.map(n =>
     `<a data-grp="${esc(n)}" class="${n===activeGrp?'on':''}">${esc(n)}</a>`).join('');
   $('tabs').querySelectorAll('a').forEach(a =>
-    a.onclick = () => { activeGrp = a.dataset.grp; renderTabs(); render(); });
+    a.onclick = () => {
+      if (a.dataset.grp === activeGrp) return;
+      activeGrp = a.dataset.grp;
+      // Миттєвий візуальний відгук: одразу переставляємо клас .on, не чекаючи даних.
+      $('tabs').querySelectorAll('a').forEach(x => x.classList.toggle('on', x === a));
+      switchGroup();
+    });
+}
+
+// Перемикання групи: дотягуємо результати лише цієї групи, потім рендеримо.
+async function switchGroup(){
+  $('content').innerHTML = '<div class="empty">Завантаження…</div>';
+  if (sumMode){
+    const r = await sb.from('results').select(RES_COLS)
+      .eq('event', eventId).eq('grp', activeGrp);
+    allResults = r.error ? [] : (r.data || []);
+    results = allResults.filter(x => x.day === day);
+  } else {
+    results = await fetchGroup(activeGrp);
+  }
+  render(); touch();
 }
 
 function render(){
@@ -215,7 +290,8 @@ function render(){
   if (q) list = list.filter(r =>
     (r.full_name||'').toLowerCase().includes(q) ||
     (r.team||'').toLowerCase().includes(q) ||
-    (r.club||'').toLowerCase().includes(q));
+    (r.club||'').toLowerCase().includes(q) ||
+    String(r.bib||'').includes(q));
 
   if (!list.length){ $('content').innerHTML = '<div class="empty">Немає даних у цій групі</div>'; return; }
 
@@ -270,11 +346,11 @@ function rowHtml(r, showPts){
   </tr>`;
 }
 
-// Бали без зайвих нулів: 100, 87.3, 95.42.
+// Бали завжди з 2 знаками після коми: 100.00, 87.30, 95.42.
 function fmtPts(p){
   const n = Number(p);
   if (!isFinite(n)) return '';
-  return (Math.round(n * 100) / 100).toString();
+  return n.toFixed(2);
 }
 
 function cmp(a,b){
@@ -372,7 +448,15 @@ function esc(s){ return String(s).replace(/[&<>"]/g, c =>
 
 function touch(){
   const last = results.reduce((m,r)=> r.updated_at>m? r.updated_at:m, '');
-  $('upd').textContent = last ? 'Оновлено: ' + new Date(last).toLocaleTimeString('uk-UA') : '';
+  const live = $('live');
+  if (offline){
+    if (live){ live.classList.add('off'); live.lastChild.textContent = 'офлайн'; }
+    const at = last ? ' · останнє: ' + new Date(last).toLocaleTimeString('uk-UA') : '';
+    $('upd').textContent = `Офлайн — оновіть сторінку (F5), щоб перепідключитись${at}`;
+  } else {
+    if (live){ live.classList.remove('off'); live.lastChild.textContent = 'наживо'; }
+    $('upd').textContent = last ? 'Оновлено: ' + new Date(last).toLocaleTimeString('uk-UA') : '';
+  }
   const sub = event?.subtitle ? event.subtitle + ' · ' : '';
   $('meta').textContent = sumMode
     ? `${sub}Залік за всі дні`
@@ -384,10 +468,11 @@ $('q').addEventListener('input', render);
 load();
 
 // Realtime (якщо увімкнено в Supabase) + запасне опитування раз на 10 с.
-sb.channel('live')
-  .on('postgres_changes', { event:'*', schema:'public', table:'results' }, load)
+// Обидва зупиняються в goOffline(); перепідключення — перезавантаженням сторінки.
+liveChannel = sb.channel('live')
+  .on('postgres_changes', { event:'*', schema:'public', table:'results' }, () => { if (!offline) load(); })
   .subscribe();
-setInterval(load, 10000);
+pollTimer = setInterval(() => { if (!offline) load(); }, 10000);
 </script>
 </body>
 </html>
