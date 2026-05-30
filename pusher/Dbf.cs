@@ -12,7 +12,21 @@ public static class Dbf
     public static List<Dictionary<string, string>> Read(string path)
     {
         var enc = Encoding.GetEncoding(1251); // Windows-1251 (кирилиця)
-        var bytes = File.ReadAllBytes(path);
+        // FileShare.ReadWrite — щоб читати файл, навіть коли програма хронометражу
+        // тримає його відкритим на запис (інакше "used by another process").
+        byte[] bytes;
+        using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read,
+                   FileShare.ReadWrite | FileShare.Delete))
+        {
+            bytes = new byte[fs.Length];
+            int read = 0;
+            while (read < bytes.Length)
+            {
+                int n = fs.Read(bytes, read, bytes.Length - read);
+                if (n == 0) break;
+                read += n;
+            }
+        }
 
         int numRecords = BitConverter.ToInt32(bytes, 4);
         int headerSize = BitConverter.ToUInt16(bytes, 8);

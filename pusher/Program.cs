@@ -171,12 +171,13 @@ static List<Dictionary<string, object?>> ReadResults(EventConfig ev, DayConfig d
         var start  = Get(r, "S_1");
         var finish = Get(r, "F_1");
         var result = Get(r, "R_1");
-        var place  = ParseInt(Get(r, "M_1")) ?? 0;
         var udal   = Get(r, "U_DAL"); // причина зняття: "MP" (mispunch), "DNS"…
         // Увага: DSO (О/С/К/Т…) — це класифікація спорттовариства, а НЕ зняття.
         // 75+ нормальних призерів мають DSO заповнене, тож у статусі його не чіпаємо.
 
-        string status = ComputeStatus(start, finish, place, udal);
+        // Місце (M_1 з DBF) НЕ читаємо — рахуємо самі за часом нижче (AssignPlaces),
+        // щоб результат з'являвся одразу після фінішу, не чекаючи оператора.
+        string status = ComputeStatus(start, finish, result, udal);
         bool isFinished = status is "finished" or "finished_pending";
 
         list.Add(new()
@@ -185,7 +186,7 @@ static List<Dictionary<string, object?>> ReadResults(EventConfig ev, DayConfig d
             ["bib"]            = bib,
             ["day"]            = d.Day,
             ["grp"]            = grp,
-            ["rk"]             = place > 0 ? place : (int?)null,
+            ["rk"]             = (int?)null, // призначається в AssignPlaces
             ["full_name"]      = fam,
             ["team"]           = Get(r, "KOM1"),   // область — як "Team" на бланку
             ["club"]           = Get(r, "KOM2"),   // клуб
@@ -203,26 +204,57 @@ static List<Dictionary<string, object?>> ReadResults(EventConfig ev, DayConfig d
             ["updated_at"]     = DateTime.UtcNow.ToString("o"),
         });
     }
+
+    AssignPlaces(list);
     return list;
+}
+
+// ---------------------------------------------------------------------
+//  Підрахунок місць усередині кожної групи за чистим часом.
+//  Рахуємо самі (а не з M_1 у DBF), щоб місце з'являлося одразу після
+//  фінішу. Однаковий час → спільне місце (стандарт орієнтування):
+//  два по 0:25:00 → обидва 3-тє, наступний — 5-те.
+//  Знятих/незавершених (status != finished*) у залік не беремо.
+// ---------------------------------------------------------------------
+static void AssignPlaces(List<Dictionary<string, object?>> rows)
+{
+    var byGroup = rows
+        .Where(r => (string)r["status"]! is "finished" or "finished_pending"
+                    && r["result_seconds"] is int)
+        .GroupBy(r => (string)r["grp"]!);
+
+    foreach (var g in byGroup)
+    {
+        var sorted = g.OrderBy(r => (int)r["result_seconds"]!).ToList();
+        int place = 0, seen = 0, prevSec = int.MinValue;
+        foreach (var r in sorted)
+        {
+            seen++;
+            int sec = (int)r["result_seconds"]!;
+            if (sec != prevSec) { place = seen; prevSec = sec; } // ex aequo → те саме місце
+            r["rk"]     = place;
+            r["status"] = "finished"; // місце є → знімаємо "(обробка)"
+        }
+    }
 }
 
 // Обчислення статусу з полів OLD.DBF.
 // Спирається на ЯВНІ ознаки, а не на "M_1=0":
 //   U_DAL заповнене (MP/DNS/…)     → dsq (явна причина зняття)
-//   фініш є, місце > 0             → finished
-//   фініш є, місця ще нема         → finished_pending (час є, місце рахується)
-//   старт є, фінішу нема           → running
+//   фініш + чистий час є           → finished (місце дорахує AssignPlaces)
+//   фініш є, але часу ще нема       → finished_pending (рідкісний проміжний стан)
+//   старт є, фінішу нема            → running
 //   інакше                         → dns
-// Це прибирає ризик "обмовити" фінішера як знятого, поки оператор ще не
-// перерахував місця в групі під час живих змагань.
-static string ComputeStatus(string start, string finish, int place, string udal)
+// Місце (M_1) тут НЕ враховуємо — pusher рахує ранги сам у AssignPlaces.
+static string ComputeStatus(string start, string finish, string result, string udal)
 {
     bool hasStart  = !string.IsNullOrWhiteSpace(start);
     bool hasFinish = !string.IsNullOrWhiteSpace(finish);
+    bool hasResult = !string.IsNullOrWhiteSpace(result);
     bool removed   = !string.IsNullOrWhiteSpace(udal);
 
     if (removed) return "dsq";
-    if (hasFinish) return place > 0 ? "finished" : "finished_pending";
+    if (hasFinish) return hasResult ? "finished" : "finished_pending";
     if (hasStart) return "running";
     return "dns";
 }
