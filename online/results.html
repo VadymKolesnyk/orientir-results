@@ -118,9 +118,9 @@ const params = new URLSearchParams(location.search);
 const eventId = params.get('event') || '';   // ?event=kyiv2025
 let day = Number(params.get('day')) || 1;     // ?day=1
 let activeGrp = '';      // '' = перша група за порядком
+let sumMode = params.get('sum') === '1';       // ?sum=1 — одразу відкрити залік
 let results = [], groups = [], event = null, eventDays = [];
-let allResults = [];     // результати ВСІХ днів (для вкладки «Сума»)
-const SUM_TAB = '__sum__';  // службовий ідентифікатор вкладки «Сума»
+let allResults = [];     // результати ВСІХ днів (для режиму «Сума»)
 
 async function load(){
   if (!eventId){
@@ -139,7 +139,10 @@ async function load(){
   results = rRes.data || []; groups = rGrp.data || [];
   event = rEv.data || null; eventDays = rDays.data || [];
 
-  // Для вкладки «Сума» потрібні результати всіх днів (а не лише поточного).
+  // Залік доступний лише коли увімкнено standings — інакше скидаємо режим.
+  if (!event?.standings) sumMode = false;
+
+  // Для режиму «Сума» потрібні результати всіх днів (а не лише поточного).
   if (event?.standings){
     const rAll = await sb.from('results').select('*').eq('event', eventId);
     allResults = rAll.error ? [] : (rAll.data || []);
@@ -154,17 +157,30 @@ function renderHeader(){
   $('title').textContent = event?.title || 'Онлайн результати';
 }
 
-// Динамічний перемикач днів — кнопки з таблиці event_days.
+// Динамічний перемикач днів — кнопки з таблиці event_days + (опційно) «Сума».
 function renderDays(){
   if (!eventDays.length){ $('days').innerHTML = ''; return; }
-  $('days').innerHTML = eventDays.map(d =>
-    `<button data-day="${d.day}" class="${d.day===day?'on':''}">${esc(dayLabel(d))}</button>`).join('');
-  $('days').querySelectorAll('button').forEach(btn => btn.onclick = () => {
+  let html = eventDays.map(d =>
+    `<button data-day="${d.day}" class="${!sumMode && d.day===day?'on':''}">${esc(dayLabel(d))}</button>`).join('');
+  // «Сума» стоїть як окремий «день» поряд із днями — залік за всі дні.
+  if (event?.standings)
+    html += `<button data-sum="1" class="${sumMode?'on':''}">Σ Сума</button>`;
+  $('days').innerHTML = html;
+
+  $('days').querySelectorAll('button[data-day]').forEach(btn => btn.onclick = () => {
+    sumMode = false;
     day = Number(btn.dataset.day);
     // Оновлюємо URL (щоб посилання на день можна було скопіювати/поділитися).
-    const u = new URL(location); u.searchParams.set('day', day); history.replaceState(null, '', u);
-    activeGrp = ''; load();
+    const u = new URL(location); u.searchParams.set('day', day); u.searchParams.delete('sum');
+    history.replaceState(null, '', u);
+    renderDays(); renderTabs(); render(); touch();
   });
+  const sumBtn = $('days').querySelector('button[data-sum]');
+  if (sumBtn) sumBtn.onclick = () => {
+    sumMode = true;
+    const u = new URL(location); u.searchParams.set('sum', '1'); history.replaceState(null, '', u);
+    renderDays(); renderTabs(); render(); touch();
+  };
 }
 
 function dayLabel(d){
@@ -173,28 +189,25 @@ function dayLabel(d){
 
 function groupNames(){
   // Усі групи, що мають учасників — завжди за алфавітом (українська локаль).
-  const all = new Set([...groups.map(g => g.name), ...results.map(r => r.grp)]);
+  // У режимі «Сума» беремо групи з усіх днів (allResults), інакше — з поточного.
+  const src = sumMode ? allResults : results;
+  const all = new Set([...groups.map(g => g.name), ...src.map(r => r.grp)]);
   return [...all]
-    .filter(g => results.some(r => r.grp === g))
+    .filter(g => src.some(r => r.grp === g))
     .sort((a, b) => a.localeCompare(b, 'uk'));
 }
 
 function renderTabs(){
   const names = groupNames();
-  const showSum = !!event?.standings;
-  const valid = showSum ? [...names, SUM_TAB] : names;
-  if (!valid.includes(activeGrp)) activeGrp = names[0] || (showSum ? SUM_TAB : '');
-  let html = names.map(n =>
+  if (!names.includes(activeGrp)) activeGrp = names[0] || '';
+  $('tabs').innerHTML = names.map(n =>
     `<a data-grp="${esc(n)}" class="${n===activeGrp?'on':''}">${esc(n)}</a>`).join('');
-  if (showSum)
-    html += `<a data-grp="${SUM_TAB}" class="${activeGrp===SUM_TAB?'on':''}">Σ Сума</a>`;
-  $('tabs').innerHTML = html;
   $('tabs').querySelectorAll('a').forEach(a =>
     a.onclick = () => { activeGrp = a.dataset.grp; renderTabs(); render(); });
 }
 
 function render(){
-  if (activeGrp === SUM_TAB){ renderSum(); return; }
+  if (sumMode){ renderSum(); return; }
 
   const showPts = !!event?.standings;
   const q = $('q').value.trim().toLowerCase();
@@ -277,11 +290,13 @@ function cmp(a,b){
 }
 
 // ----------------------------------------------------------------------
-//  Вкладка «Сума»: залік за всі дні. Учасник = пара (bib, grp).
-//  Колонки: № | ПІБ | [День N: місце · час · бали] × дні | Сума балів.
+//  Режим «Сума»: окрема «кнопка дня» в ряду днів. Групи лишаються вкладками,
+//  тож показуємо залік за всі дні ЛИШЕ для активної групи (activeGrp).
+//  Учасник = пара (bib, grp). Колонки: місце | ПІБ | № | команда |
+//  [День N: місце · час · бали] × дні | Сума балів.
 //  Пропущений/нефінішований день → 0 балів (місце/час — тире).
 //  Сортування — за сумою балів, спадання. На мобільному лишаються лише
-//  № + бали кожного дня + сума (місце/час ховаються класом col-detail).
+//  місце + ПІБ + бали кожного дня + сума (решта ховається класом col-detail).
 // ----------------------------------------------------------------------
 function renderSum(){
   const q = $('q').value.trim().toLowerCase();
@@ -291,11 +306,10 @@ function renderSum(){
     : [...new Set(allResults.map(r => r.day))].sort((a,b)=>a-b);
   if (!days.length) days = [day];
 
-  // Агрегуємо: grp → "bib" → { bib, name, team, byDay:{day:row}, total }.
-  const groupsMap = new Map();
+  // Агрегуємо учасників активної групи: "bib" → { bib, name, team, byDay, total }.
+  const m = new Map();
   for (const r of allResults){
-    if (!groupsMap.has(r.grp)) groupsMap.set(r.grp, new Map());
-    const m = groupsMap.get(r.grp);
+    if (r.grp !== activeGrp) continue;
     if (!m.has(r.bib))
       m.set(r.bib, { bib:r.bib, name:r.full_name, team:r.team, byDay:{}, total:0 });
     const p = m.get(r.bib);
@@ -306,58 +320,51 @@ function renderSum(){
     p.total += Number(r.points) || 0; // бали є лише у фінішерів; решта — 0
   }
 
-  const grpNames = [...groupsMap.keys()].sort((a,b)=>a.localeCompare(b,'uk'));
-  if (!grpNames.length){ $('content').innerHTML = '<div class="empty">Немає даних для заліку</div>'; return; }
+  let people = [...m.values()];
+  if (q) people = people.filter(p =>
+    (p.name||'').toLowerCase().includes(q) ||
+    (p.team||'').toLowerCase().includes(q) ||
+    String(p.bib).includes(q));
+
+  if (!people.length){ $('content').innerHTML = '<div class="empty">Немає даних для заліку в цій групі</div>'; return; }
+  people.sort((a,b)=> b.total - a.total); // за сумою балів, спадання
 
   const dayHead = days.map(d =>
     `<th class="col-detail">М</th><th class="col-detail">Час</th><th class="pts">Д${d}</th>`).join('');
 
-  let html = '';
-  for (const gname of grpNames){
-    let people = [...groupsMap.get(gname).values()];
-    if (q) people = people.filter(p =>
-      (p.name||'').toLowerCase().includes(q) ||
-      (p.team||'').toLowerCase().includes(q) ||
-      String(p.bib).includes(q));
-    if (!people.length) continue;
-    people.sort((a,b)=> b.total - a.total); // за сумою балів, спадання
-
-    let rank = 0;
-    const rows = people.map((p, i) => {
-      rank = i + 1;
-      const cells = days.map(d => {
-        const r = p.byDay[d];
-        const fin = r && (r.status==='finished' || r.status==='finished_pending');
-        const pl  = (r && r.status==='finished' && r.rk) ? r.rk : '–';
-        const tm  = fin ? esc(r.result_time||'') : '–';
-        const pts = (r && r.points!=null) ? fmtPts(r.points) : '0';
-        const win = (r && r.points===100) ? ' win' : '';
-        return `<td class="col-detail daycell"><span class="pl">${pl}</span></td>
-                <td class="col-detail daycell"><span class="tm">${tm}</span></td>
-                <td class="pts${win}">${pts}</td>`;
-      }).join('');
-      const medal = ['','gold','silver','bronze'][rank] || '';
-      return `<tr>
-        <td class="rk"><span class="${medal}">${rank}</span></td>
-        <td>${esc(p.name||'')}</td>
-        <td class="col-bib">${p.bib||''}</td>
-        <td class="col-detail">${esc(p.team||'')}</td>
-        ${cells}
-        <td class="total">${fmtPts(p.total)}</td>
-      </tr>`;
+  const rows = people.map((p, i) => {
+    const rank = i + 1;
+    const cells = days.map(d => {
+      const r = p.byDay[d];
+      const fin = r && (r.status==='finished' || r.status==='finished_pending');
+      const pl  = (r && r.status==='finished' && r.rk) ? r.rk : '–';
+      const tm  = fin ? esc(r.result_time||'') : '–';
+      const pts = (r && r.points!=null) ? fmtPts(r.points) : '0';
+      const win = (r && r.points===100) ? ' win' : '';
+      return `<td class="col-detail daycell"><span class="pl">${pl}</span></td>
+              <td class="col-detail daycell"><span class="tm">${tm}</span></td>
+              <td class="pts${win}">${pts}</td>`;
     }).join('');
+    const medal = ['','gold','silver','bronze'][rank] || '';
+    return `<tr>
+      <td class="rk"><span class="${medal}">${rank}</span></td>
+      <td>${esc(p.name||'')}</td>
+      <td class="col-bib">${p.bib||''}</td>
+      <td class="col-detail">${esc(p.team||'')}</td>
+      ${cells}
+      <td class="total">${fmtPts(p.total)}</td>
+    </tr>`;
+  }).join('');
 
-    html += `<div class="ghead"><b>${esc(gname)}</b> <span>залік за ${days.length} дн.</span></div>
-      <div class="tbl-scroll"><table>
-        <thead><tr>
-          <th class="rk">Місце</th><th>Прізвище, ім'я</th><th class="col-bib">№</th>
-          <th class="col-detail">Команда</th>${dayHead}<th class="total">Сума</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table></div>`;
-  }
-
-  $('content').innerHTML = html || '<div class="empty">Немає даних для заліку</div>';
+  $('content').innerHTML = `
+    <div class="ghead"><b>${esc(activeGrp)}</b> <span>залік за ${days.length} дн.</span></div>
+    <div class="tbl-scroll"><table>
+      <thead><tr>
+        <th class="rk">Місце</th><th>Прізвище, ім'я</th><th class="col-bib">№</th>
+        <th class="col-detail">Команда</th>${dayHead}<th class="total">Сума</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
 }
 
 function esc(s){ return String(s).replace(/[&<>"]/g, c =>
@@ -367,7 +374,9 @@ function touch(){
   const last = results.reduce((m,r)=> r.updated_at>m? r.updated_at:m, '');
   $('upd').textContent = last ? 'Оновлено: ' + new Date(last).toLocaleTimeString('uk-UA') : '';
   const sub = event?.subtitle ? event.subtitle + ' · ' : '';
-  $('meta').textContent = `${sub}День ${day} · учасників: ${results.length}`;
+  $('meta').textContent = sumMode
+    ? `${sub}Залік за всі дні`
+    : `${sub}День ${day} · учасників: ${results.length}`;
 }
 
 $('q').addEventListener('input', render);
