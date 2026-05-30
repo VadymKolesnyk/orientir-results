@@ -46,6 +46,12 @@
   .rk{font-weight:900;width:46px;text-align:center}
   .gold{color:#b8860b}.silver{color:#7a7a8c}.bronze{color:#a8682b}
   .time{font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
+  .pts{font-variant-numeric:tabular-nums;font-weight:800;text-align:right;white-space:nowrap;color:#222a92}
+  .pts.win{color:#2f9e5c}
+  .total{font-variant-numeric:tabular-nums;font-weight:900;text-align:right;white-space:nowrap;color:#c0392b}
+  .daycell{white-space:nowrap}
+  .daycell .pl{font-weight:900;color:#3a3f63}
+  .daycell .tm{color:#5d6780;font-size:12px}
   .flag{color:#c0392b;font-weight:800;font-size:12px}
   .b-running{color:#30349b;font-weight:700;font-size:12px}
   .empty{padding:34px;text-align:center;color:#5d6780}
@@ -61,6 +67,8 @@
     h1{font-size:17px}
     /* На вузькому екрані ховаємо найменш важливі колонки: № і Старт. */
     .col-bib, .col-start{display:none}
+    /* У «Сумі» на мобільному лишаємо тільки № + бали днів + сума: ховаємо місце/час. */
+    .col-detail{display:none}
     th,td{padding:8px 8px;font-size:13px}
     .rk{width:38px}
     .ghead b{font-size:16px}
@@ -111,6 +119,8 @@ const eventId = params.get('event') || '';   // ?event=kyiv2025
 let day = Number(params.get('day')) || 1;     // ?day=1
 let activeGrp = '';      // '' = перша група за порядком
 let results = [], groups = [], event = null, eventDays = [];
+let allResults = [];     // результати ВСІХ днів (для вкладки «Сума»)
+const SUM_TAB = '__sum__';  // службовий ідентифікатор вкладки «Сума»
 
 async function load(){
   if (!eventId){
@@ -128,6 +138,15 @@ async function load(){
   if (err){ $('content').innerHTML = `<div class="empty">Помилка: ${err.message}</div>`; return; }
   results = rRes.data || []; groups = rGrp.data || [];
   event = rEv.data || null; eventDays = rDays.data || [];
+
+  // Для вкладки «Сума» потрібні результати всіх днів (а не лише поточного).
+  if (event?.standings){
+    const rAll = await sb.from('results').select('*').eq('event', eventId);
+    allResults = rAll.error ? [] : (rAll.data || []);
+  } else {
+    allResults = [];
+  }
+
   renderHeader(); renderDays(); renderTabs(); render(); touch();
 }
 
@@ -162,14 +181,22 @@ function groupNames(){
 
 function renderTabs(){
   const names = groupNames();
-  if (!names.includes(activeGrp)) activeGrp = names[0] || '';
-  $('tabs').innerHTML = names.map(n =>
+  const showSum = !!event?.standings;
+  const valid = showSum ? [...names, SUM_TAB] : names;
+  if (!valid.includes(activeGrp)) activeGrp = names[0] || (showSum ? SUM_TAB : '');
+  let html = names.map(n =>
     `<a data-grp="${esc(n)}" class="${n===activeGrp?'on':''}">${esc(n)}</a>`).join('');
+  if (showSum)
+    html += `<a data-grp="${SUM_TAB}" class="${activeGrp===SUM_TAB?'on':''}">Σ Сума</a>`;
+  $('tabs').innerHTML = html;
   $('tabs').querySelectorAll('a').forEach(a =>
     a.onclick = () => { activeGrp = a.dataset.grp; renderTabs(); render(); });
 }
 
 function render(){
+  if (activeGrp === SUM_TAB){ renderSum(); return; }
+
+  const showPts = !!event?.standings;
   const q = $('q').value.trim().toLowerCase();
   let list = results.filter(r => r.grp === activeGrp);
   if (q) list = list.filter(r =>
@@ -194,14 +221,14 @@ function render(){
     <div class="tbl-scroll"><table>
       <thead><tr>
         <th class="rk">Місце</th><th>Прізвище, ім'я</th><th class="col-bib">№</th>
-        <th>Команда</th><th class="col-start">Старт</th><th>Час</th>
+        <th>Команда</th><th class="col-start">Старт</th><th>Час</th>${showPts?'<th class="pts">Бали</th>':''}
       </tr></thead>
-      <tbody>${list.map(rowHtml).join('')}</tbody>
+      <tbody>${list.map(r => rowHtml(r, showPts)).join('')}</tbody>
     </table></div>
     <p class="sub" style="margin-top:8px">Фінішували: ${fin} · на дистанції: ${run}${dsq?` · знято: ${dsq}`:''} · усього: ${list.length}</p>`;
 }
 
-function rowHtml(r){
+function rowHtml(r, showPts){
   let rk = '', time = '';
   if (r.status === 'finished'){
     rk = `<span class="${['','gold','silver','bronze'][r.rk]||''}">${r.rk||''}</span>`;
@@ -217,14 +244,24 @@ function rowHtml(r){
   } else if (r.status === 'dns'){
     time = `<span class="b-running" style="color:#9aa2b8">не старт.</span>`;
   }
+  const ptsCell = showPts
+    ? `<td class="pts${r.points===100?' win':''}">${r.points!=null?fmtPts(r.points):''}</td>`
+    : '';
   return `<tr>
     <td class="rk">${rk}</td>
     <td>${esc(r.full_name)}</td>
     <td class="col-bib">${r.bib||''}</td>
     <td>${esc(r.team||'')}</td>
     <td class="time col-start" style="font-weight:400">${esc(r.start_time||'')}</td>
-    <td>${time}</td>
+    <td>${time}</td>${ptsCell}
   </tr>`;
+}
+
+// Бали без зайвих нулів: 100, 87.3, 95.42.
+function fmtPts(p){
+  const n = Number(p);
+  if (!isFinite(n)) return '';
+  return (Math.round(n * 100) / 100).toString();
 }
 
 function cmp(a,b){
@@ -237,6 +274,90 @@ function cmp(a,b){
   if (a.status==='finished_pending')   // ще без місця — за часом
     return (a.result_seconds ?? 1e9) - (b.result_seconds ?? 1e9);
   return (a.start_time||'').localeCompare(b.start_time||'');
+}
+
+// ----------------------------------------------------------------------
+//  Вкладка «Сума»: залік за всі дні. Учасник = пара (bib, grp).
+//  Колонки: № | ПІБ | [День N: місце · час · бали] × дні | Сума балів.
+//  Пропущений/нефінішований день → 0 балів (місце/час — тире).
+//  Сортування — за сумою балів, спадання. На мобільному лишаються лише
+//  № + бали кожного дня + сума (місце/час ховаються класом col-detail).
+// ----------------------------------------------------------------------
+function renderSum(){
+  const q = $('q').value.trim().toLowerCase();
+  // Перелік днів за порядком (із event_days; запасний варіант — з даних).
+  let days = eventDays.length
+    ? eventDays.map(d => d.day)
+    : [...new Set(allResults.map(r => r.day))].sort((a,b)=>a-b);
+  if (!days.length) days = [day];
+
+  // Агрегуємо: grp → "bib" → { bib, name, team, byDay:{day:row}, total }.
+  const groupsMap = new Map();
+  for (const r of allResults){
+    if (!groupsMap.has(r.grp)) groupsMap.set(r.grp, new Map());
+    const m = groupsMap.get(r.grp);
+    if (!m.has(r.bib))
+      m.set(r.bib, { bib:r.bib, name:r.full_name, team:r.team, byDay:{}, total:0 });
+    const p = m.get(r.bib);
+    p.byDay[r.day] = r;
+    // Найсвіжіше ПІБ/команду беремо з будь-якого дня (можуть бути порожні).
+    if (r.full_name) p.name = r.full_name;
+    if (r.team) p.team = r.team;
+    p.total += Number(r.points) || 0; // бали є лише у фінішерів; решта — 0
+  }
+
+  const grpNames = [...groupsMap.keys()].sort((a,b)=>a.localeCompare(b,'uk'));
+  if (!grpNames.length){ $('content').innerHTML = '<div class="empty">Немає даних для заліку</div>'; return; }
+
+  const dayHead = days.map(d =>
+    `<th class="col-detail">М</th><th class="col-detail">Час</th><th class="pts">Д${d}</th>`).join('');
+
+  let html = '';
+  for (const gname of grpNames){
+    let people = [...groupsMap.get(gname).values()];
+    if (q) people = people.filter(p =>
+      (p.name||'').toLowerCase().includes(q) ||
+      (p.team||'').toLowerCase().includes(q) ||
+      String(p.bib).includes(q));
+    if (!people.length) continue;
+    people.sort((a,b)=> b.total - a.total); // за сумою балів, спадання
+
+    let rank = 0;
+    const rows = people.map((p, i) => {
+      rank = i + 1;
+      const cells = days.map(d => {
+        const r = p.byDay[d];
+        const fin = r && (r.status==='finished' || r.status==='finished_pending');
+        const pl  = (r && r.status==='finished' && r.rk) ? r.rk : '–';
+        const tm  = fin ? esc(r.result_time||'') : '–';
+        const pts = (r && r.points!=null) ? fmtPts(r.points) : '0';
+        const win = (r && r.points===100) ? ' win' : '';
+        return `<td class="col-detail daycell"><span class="pl">${pl}</span></td>
+                <td class="col-detail daycell"><span class="tm">${tm}</span></td>
+                <td class="pts${win}">${pts}</td>`;
+      }).join('');
+      const medal = ['','gold','silver','bronze'][rank] || '';
+      return `<tr>
+        <td class="rk"><span class="${medal}">${rank}</span></td>
+        <td>${esc(p.name||'')}</td>
+        <td class="col-bib">${p.bib||''}</td>
+        <td class="col-detail">${esc(p.team||'')}</td>
+        ${cells}
+        <td class="total">${fmtPts(p.total)}</td>
+      </tr>`;
+    }).join('');
+
+    html += `<div class="ghead"><b>${esc(gname)}</b> <span>залік за ${days.length} дн.</span></div>
+      <div class="tbl-scroll"><table>
+        <thead><tr>
+          <th class="rk">Місце</th><th>Прізвище, ім'я</th><th class="col-bib">№</th>
+          <th class="col-detail">Команда</th>${dayHead}<th class="total">Сума</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+  }
+
+  $('content').innerHTML = html || '<div class="empty">Немає даних для заліку</div>';
 }
 
 function esc(s){ return String(s).replace(/[&<>"]/g, c =>

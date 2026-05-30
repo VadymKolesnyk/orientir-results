@@ -37,7 +37,7 @@ if (dryRun)
                            .OrderBy(r => (int?)r["rk"] ?? 999).Take(3);
             foreach (var r in sample)
                 Console.WriteLine($"      {r["rk"],3}  {r["full_name"],-24} " +
-                                  $"event={r["event"]} t={r["result_time"]} [{r["status"]}]");
+                                  $"event={r["event"]} t={r["result_time"]} бали={r["points"]} [{r["status"]}]");
         }
     }
     return;
@@ -68,6 +68,7 @@ while (true)
                     ["title"]      = ev.Title,
                     ["subtitle"]   = NullIfEmpty(ev.Subtitle),
                     ["days_count"] = days.Count,
+                    ["standings"]  = ev.Standings,
                     ["updated_at"] = DateTime.UtcNow.ToString("o"),
                 }});
                 await Push(http, cfg, "event_days", "event,day",
@@ -200,12 +201,14 @@ static List<Dictionary<string, object?>> ReadResults(EventConfig ev, DayConfig d
             // Час показуємо для будь-якого фінішу (зокрема ще-не-розставленого місця).
             ["result_time"]    = isFinished ? NullIfEmpty(result) : null,
             ["result_seconds"] = isFinished ? TimeToSeconds(result) : null,
+            ["points"]         = (decimal?)null, // призначається в AssignPoints
             ["status"]         = status,
             ["updated_at"]     = DateTime.UtcNow.ToString("o"),
         });
     }
 
     AssignPlaces(list);
+    AssignPoints(list);
     return list;
 }
 
@@ -234,6 +237,35 @@ static void AssignPlaces(List<Dictionary<string, object?>> rows)
             if (sec != prevSec) { place = seen; prevSec = sec; } // ex aequo → те саме місце
             r["rk"]     = place;
             r["status"] = "finished"; // місце є → знімаємо "(обробка)"
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
+//  Підрахунок балів усередині кожної групи за формулою:
+//      бали = 100 * (2 - час_учасника / час_переможця)
+//  Час_переможця — найкращий (найменший) час фінішера в групі (той, хто
+//  отримав 1-ше місце). Переможець завжди дістає рівно 100 балів.
+//  Рахується щотакту від актуального час_переможця, тож зміна лідера
+//  автоматично перераховує бали ВСІЄЇ групи — окремої логіки не треба.
+//  Нефінішери (зняті/біжать/не старт.) балів не отримують (points = null).
+// ---------------------------------------------------------------------
+static void AssignPoints(List<Dictionary<string, object?>> rows)
+{
+    var byGroup = rows
+        .Where(r => (string)r["status"]! == "finished" && r["result_seconds"] is int)
+        .GroupBy(r => (string)r["grp"]!);
+
+    foreach (var g in byGroup)
+    {
+        int winnerSec = g.Min(r => (int)r["result_seconds"]!);
+        if (winnerSec <= 0) continue; // нульовий час переможця — ділити не можна
+
+        foreach (var r in g)
+        {
+            int sec = (int)r["result_seconds"]!;
+            double pts = 100.0 * (2.0 - (double)sec / winnerSec);
+            r["points"] = (decimal)Math.Round(pts, 2);
         }
     }
 }
@@ -329,6 +361,7 @@ class EventConfig
     public string Title { get; set; } = "";
     public string Subtitle { get; set; } = "";
     public string BasePath { get; set; } = "";  // тека змагання
+    public bool Standings { get; set; } = false; // вмикає бали + вкладку «Сума» на сторінці
     public List<DayConfig> Days { get; set; } = new();
 
     // Якщо Days не задано — автоматично знаходимо підтеки D_1..D_n з OLD.DBF.

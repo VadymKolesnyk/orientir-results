@@ -21,6 +21,7 @@ create table public.events (
   title       text not null,           -- "Kyiv City Race"
   subtitle    text,                    -- "31.05–01.06.2025"
   days_count  int  not null default 1,
+  standings   boolean not null default false, -- вмикає бали + вкладку «Сума» на сторінці
   updated_at  timestamptz not null default now()
 );
 
@@ -68,6 +69,7 @@ create table public.results (
   finish_time    text,                 -- F_1 "14:01:03.3"
   result_time    text,                 -- R_1 "00:18:32"
   result_seconds int,                  -- R_1 у секундах (для сортування)
+  points         numeric,              -- бали: 100*(2 - час/час_переможця); NULL = не фінішував
 
   -- Обчислений статус (рахується в publisher, спирається на U_DAL, а НЕ на M_1=0):
   --  finished         — фініш + місце (M_1 > 0)
@@ -98,6 +100,13 @@ create policy "read events"     on public.events     for select to anon using (t
 create policy "read event_days" on public.event_days for select to anon using (true);
 create policy "read groups"     on public.groups     for select to anon using (true);
 create policy "read results"    on public.results    for select to anon using (true);
+
+-- ---------------------------------------------------------------------
+--  Якщо БД уже існує і таблиці перестворювати НЕ хочеш — додай лише нові
+--  колонки (бали + прапорець заліку) без drop:
+--    alter table public.results add column if not exists points numeric;
+--    alter table public.events  add column if not exists standings boolean not null default false;
+-- ---------------------------------------------------------------------
 
 -- (Опційно) Realtime — миттєве оновлення сторінки:
 -- alter publication supabase_realtime add table public.results;
