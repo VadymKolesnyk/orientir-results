@@ -3,6 +3,12 @@
 // тож прямий перехід на справжній шлях /event/d1 дав би 404. Із hash увесь
 // маршрут лишається на клієнті, F5 і прямі лінки працюють без 404.html.
 
+import { FAV_GRP } from './favorites'
+
+// Псевдогрупу «Обрані» (FAV_GRP = «★») у URL кодуємо стабільним сегментом «fav»,
+// щоб лінк був читабельний і не залежав від символу зірочки в адресі.
+const FAV_SEG = 'fav'
+
 export interface Route {
   event: string
   // День змагання (1, 2, …). У режимі «Сума» day лишається останнім обраним.
@@ -24,7 +30,9 @@ export function parseRoute(): Route {
   if (parts.length) {
     const event = decodeURIComponent(parts[0] || '')
     const seg = (parts[1] || '').toLowerCase()
-    const grp = decodeURIComponent(parts[2] || '')
+    const rawGrp = decodeURIComponent(parts[2] || '')
+    // Сегмент «fav» → маркер псевдогрупи «Обрані».
+    const grp = rawGrp.toLowerCase() === FAV_SEG ? FAV_GRP : rawGrp
     if (seg === 'sum') return { event, day: 1, sumMode: true, grp }
     const n = Number(seg.replace(/^d/, ''))
     return {
@@ -49,7 +57,8 @@ export function parseRoute(): Route {
 export function buildHash(r: Route): string {
   if (!r.event) return ''
   const seg = r.sumMode ? 'sum' : `d${r.day}`
-  const grpSeg = r.grp ? `/${encodeURIComponent(r.grp)}` : ''
+  const grpVal = r.grp === FAV_GRP ? FAV_SEG : r.grp
+  const grpSeg = grpVal ? `/${encodeURIComponent(grpVal)}` : ''
   return `#/${encodeURIComponent(r.event)}/${seg}${grpSeg}`
 }
 

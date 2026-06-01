@@ -1,4 +1,5 @@
 import { cmp, fmtPts, matchesQuery } from '../lib/results'
+import { StarButton } from './StarButton'
 import type { GroupRow, ResultRow } from '../types'
 
 const MEDAL = ['', 'gold', 'silver', 'bronze']
@@ -9,10 +10,22 @@ interface Props {
   activeGrp: string
   query: string
   showPts: boolean
+  isFav: (bib: number) => boolean
+  onToggleFav: (bib: number) => void
 }
 
 // Час/місце залежно від статусу учасника (1:1 з rowHtml у results.html).
-function ResultRowView({ r, showPts }: { r: ResultRow; showPts: boolean }) {
+function ResultRowView({
+  r,
+  showPts,
+  fav,
+  onToggleFav,
+}: {
+  r: ResultRow
+  showPts: boolean
+  fav: boolean
+  onToggleFav: (bib: number) => void
+}) {
   let rk: React.ReactNode = ''
   let time: React.ReactNode = ''
 
@@ -43,7 +56,10 @@ function ResultRowView({ r, showPts }: { r: ResultRow; showPts: boolean }) {
   }
 
   return (
-    <tr>
+    <tr className={fav ? 'fav-row' : ''}>
+      <td className="col-star">
+        <StarButton active={fav} onToggle={() => onToggleFav(r.bib)} />
+      </td>
       <td className="rk">{rk}</td>
       <td>{r.full_name}</td>
       <td className="col-bib">{r.bib || ''}</td>
@@ -68,6 +84,8 @@ export function ResultsTable({
   activeGrp,
   query,
   showPts,
+  isFav,
+  onToggleFav,
 }: Props) {
   const q = query.trim().toLowerCase()
   // results уже містить лише активну групу (запит фіксує grp), тож не фільтруємо.
@@ -119,6 +137,7 @@ export function ResultsTable({
         <table>
           <thead>
             <tr>
+              <th className="col-star" aria-label="Обране"></th>
               <th className="rk">
                 <span className="th-full">Місце</span>
                 <span className="th-short">М</span>
@@ -134,7 +153,13 @@ export function ResultsTable({
           </thead>
           <tbody>
             {list.map((r) => (
-              <ResultRowView key={r.bib} r={r} showPts={showPts} />
+              <ResultRowView
+                key={r.bib}
+                r={r}
+                showPts={showPts}
+                fav={isFav(r.bib)}
+                onToggleFav={onToggleFav}
+              />
             ))}
           </tbody>
         </table>

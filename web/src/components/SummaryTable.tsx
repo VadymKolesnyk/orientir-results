@@ -6,6 +6,8 @@ import {
   matchesPersonQuery,
   summaryDays,
 } from '../lib/results'
+import { StarButton } from './StarButton'
+import { FAV_GRP } from '../lib/favorites'
 import type { EventDay, ResultRow } from '../types'
 
 const MEDAL = ['', 'gold', 'silver', 'bronze']
@@ -16,6 +18,8 @@ interface Props {
   activeGrp: string
   day: number
   query: string
+  isFav: (bib: number) => boolean
+  onToggleFav: (bib: number) => void
 }
 
 // Режим «Сума»: залік за всі дні для активної групи. Учасник = bib.
@@ -26,23 +30,35 @@ export function SummaryTable({
   activeGrp,
   day,
   query,
+  isFav,
+  onToggleFav,
 }: Props) {
   const q = query.trim().toLowerCase()
+  const fav = activeGrp === FAV_GRP
   const days = summaryDays(eventDays, allResults, day)
 
-  let people = aggregateSummary(allResults)
-  if (q) people = people.filter((p) => matchesPersonQuery(p, q))
+  // Місце рахуємо за ПОВНИМ заліком (після сортування), і лише потім фільтруємо
+  // за пошуком — інакше місце «з'їжджало» б на 1, 2, … у відфільтрованому списку.
+  const ranked = [...aggregateSummary(allResults)]
+    .sort((a, b) => compareSummary(a, b, days))
+    .map((p, i) => ({ p, rank: i + 1 }))
+  const rows = q ? ranked.filter(({ p }) => matchesPersonQuery(p, q)) : ranked
 
-  if (!people.length) {
+  if (!rows.length) {
     const msg = q
       ? {
           title: 'Нічого не знайдено',
           sub: `За запитом «${query.trim()}» немає учасників`,
         }
-      : {
-          title: 'Залік ще порожній',
-          sub: 'Бали з’являться після перших фінішів у групі',
-        }
+      : fav
+        ? {
+            title: 'Ще нікого не додано в обрані',
+            sub: 'Натисніть зірочку ☆ біля учасника в будь-якій групі',
+          }
+        : {
+            title: 'Залік ще порожній',
+            sub: 'Бали з’являться після перших фінішів у групі',
+          }
     return (
       <div className="empty">
         <div className="empty-title">{msg.title}</div>
@@ -51,19 +67,19 @@ export function SummaryTable({
     )
   }
 
-  // Сортування за сумою балів (спадання) з тай-брейком: к-ть результатів,
-  // потім бали за останнім → попереднім днем.
-  people = [...people].sort((a, b) => compareSummary(a, b, days))
-
   return (
     <>
       <div className="ghead">
-        <b>{activeGrp}</b> <span>залік за {days.length} дн.</span>
+        <b className={fav ? 'fav-title' : ''}>
+          {fav ? '★ Обрані' : activeGrp}
+        </b>{' '}
+        <span>залік за {days.length} дн.</span>
       </div>
       <div className="tbl-scroll">
         <table>
           <thead>
             <tr>
+              <th className="col-star" aria-label="Обране"></th>
               <th className="rk">
                 <span className="th-full">Місце</span>
                 <span className="th-short">М</span>
@@ -83,11 +99,17 @@ export function SummaryTable({
             </tr>
           </thead>
           <tbody>
-            {people.map((p, i) => {
-              const rank = i + 1
+            {rows.map(({ p, rank }) => {
               const medal = MEDAL[rank] || ''
+              const fav = isFav(p.bib)
               return (
-                <tr key={p.bib}>
+                <tr key={p.bib} className={fav ? 'fav-row' : ''}>
+                  <td className="col-star">
+                    <StarButton
+                      active={fav}
+                      onToggle={() => onToggleFav(p.bib)}
+                    />
+                  </td>
                   <td className="rk">
                     <span className={medal}>{rank}</span>
                   </td>

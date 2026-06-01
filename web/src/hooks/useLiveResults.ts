@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { sb } from '../lib/supabase'
 import { groupNames } from '../lib/results'
-import { RES_COLS, SYNC_COLS, GRP_COLS } from '../types'
+import { FAV_GRP } from '../lib/favorites'
+import { RES_COLS, RES_COLS_FAV, SYNC_COLS, GRP_COLS } from '../types'
 import type {
   EventRow,
   EventDay,
@@ -23,6 +24,9 @@ interface Args {
   day: number
   sumMode: boolean
   activeGrp: string
+  // Номери обраних учасників (bib). Потрібні, коли activeGrp === FAV_GRP:
+  // тягнемо рядки всіх груп, відфільтровані за цими bib.
+  favBibs: number[]
   // викликається після кожного load, щоб App міг узгодити активну групу
   onGroupsResolved: (names: string[]) => string
   // вмикається, коли event.standings === false (App має скинути sumMode)
@@ -41,8 +45,15 @@ export interface LiveState {
 }
 
 export function useLiveResults(args: Args) {
-  const { eventId, day, sumMode, activeGrp, onGroupsResolved, onStandingsOff } =
-    args
+  const {
+    eventId,
+    day,
+    sumMode,
+    activeGrp,
+    favBibs,
+    onGroupsResolved,
+    onStandingsOff,
+  } = args
 
   const [state, setState] = useState<LiveState>({
     event: null,
@@ -72,8 +83,8 @@ export function useLiveResults(args: Args) {
   rowsRef.current = { results: state.results, allResults: state.allResults }
 
   // Останні значення керуючих параметрів — щоб таймер/realtime читали свіже.
-  const argsRef = useRef({ eventId, day, sumMode, activeGrp })
-  argsRef.current = { eventId, day, sumMode, activeGrp }
+  const argsRef = useRef({ eventId, day, sumMode, activeGrp, favBibs })
+  argsRef.current = { eventId, day, sumMode, activeGrp, favBibs }
   const cbRef = useRef({ onGroupsResolved, onStandingsOff })
   cbRef.current = { onGroupsResolved, onStandingsOff }
 
@@ -159,9 +170,32 @@ export function useLiveResults(args: Args) {
     [goOffline, goBackOnline],
   )
 
+  // Рядки обраних учасників (FAV_GRP) із усіх груп. sum=false → лише поточний
+  // день; sum=true → усі дні (для заліку «Сума»). Тягнемо grp, щоб знати групу
+  // кожного. Порожній список обраних → без запиту.
+  const fetchFavorites = useCallback(
+    async (sum: boolean): Promise<ResultRow[]> => {
+      const { eventId, day, favBibs } = argsRef.current
+      if (!favBibs.length) return []
+      let q = sb
+        .from('results')
+        .select(RES_COLS_FAV)
+        .eq('event', eventId)
+        .in('bib', favBibs)
+      if (!sum) q = q.eq('day', day)
+      const r = await q
+      // RES_COLS_FAV — динамічний рядок, тож supabase не виводить тип рядка;
+      // приводимо через unknown (дані відповідають ResultRow + grp).
+      return r.error ? [] : ((r.data as unknown as ResultRow[]) || [])
+    },
+    [],
+  )
+
   // Результати однієї групи поточного дня (лише потрібні колонки).
+  // Псевдогрупа «Обрані» (FAV_GRP) делегується у fetchFavorites (поточний день).
   const fetchGroup = useCallback(
     async (grp: string): Promise<ResultRow[]> => {
+      if (grp === FAV_GRP) return fetchFavorites(false)
       const { eventId, day } = argsRef.current
       const r = await sb
         .from('results')
@@ -171,7 +205,7 @@ export function useLiveResults(args: Args) {
         .eq('grp', grp)
       return r.error ? [] : ((r.data as ResultRow[]) || [])
     },
-    [],
+    [fetchFavorites],
   )
 
   // showLoading=true піднімає спінер на час запиту — для «навігаційних»
@@ -214,7 +248,11 @@ export function useLiveResults(args: Args) {
 
     let allResults: ResultRow[] = []
     let results: ResultRow[] = []
-    if (effSum) {
+    if (effSum && grp === FAV_GRP) {
+      // «Обрані» + «Сума»: залік за всі дні для обраних bib (з усіх груп).
+      allResults = await fetchFavorites(true)
+      results = allResults.filter((r) => r.day === day)
+    } else if (effSum) {
       // Режим «Сума»: тягнемо лише активну групу, але за ВСІ дні.
       const rAll = await sb
         .from('results')
@@ -224,6 +262,7 @@ export function useLiveResults(args: Args) {
       allResults = rAll.error ? [] : ((rAll.data as ResultRow[]) || [])
       results = allResults.filter((r) => r.day === day)
     } else {
+      // Звичайна група або «Обрані» за день (fetchGroup розрізняє FAV_GRP).
       results = grp ? await fetchGroup(grp) : []
     }
 
@@ -238,7 +277,7 @@ export function useLiveResults(args: Args) {
       loading: false,
       error: null,
     })
-  }, [checkStale, fetchGroup])
+  }, [checkStale, fetchGroup, fetchFavorites])
 
   // Фонове оновлення (polling/realtime): тягнемо ЛИШЕ змінні поля (SYNC_COLS)
   // активної групи й накладаємо їх на вже завантажені рядки — сталі поля
@@ -246,22 +285,34 @@ export function useLiveResults(args: Args) {
   // Нові учасники (bib, якого ще нема локально) приходять без сталих полів —
   // для них робимо разовий повний дозапит (RES_COLS) лише по їхніх bib.
   const syncResults = useCallback(async () => {
-    const { eventId, day, sumMode, activeGrp: grp } = argsRef.current
+    const { eventId, day, sumMode, activeGrp: grp, favBibs } = argsRef.current
     if (!eventId || !grp) return
 
+    const fav = grp === FAV_GRP
+    if (fav && !favBibs.length) {
+      // Обраних немає — нема чого синхронізувати; тримаємо порожній список.
+      setState((s) =>
+        s.results.length ? { ...s, results: [], allResults: [] } : s,
+      )
+      return
+    }
+    // Залік (за всі дні) — застосовуємо й до «Обраних» (тоді agg по bib),
+    // і до звичайної групи. effSum керує наявністю фільтра за днем.
+    const effSum = sumMode
+    // Колонки повного дозапиту: для «Обраних» тягнемо ще й grp.
+    const fullCols = fav ? RES_COLS_FAV : RES_COLS
+
     // 1) Тягнемо лише змінні поля. У sum-режимі — за всі дні, інакше — поточний.
-    let q = sb
-      .from('results')
-      .select(SYNC_COLS)
-      .eq('event', eventId)
-      .eq('grp', grp)
-    if (!sumMode) q = q.eq('day', day)
+    // Для «Обраних» — без grp-фільтра, за списком bib; решта — за grp.
+    let q = sb.from('results').select(SYNC_COLS).eq('event', eventId)
+    q = fav ? q.in('bib', favBibs) : q.eq('grp', grp)
+    if (!effSum) q = q.eq('day', day)
     const rSync = await q
     if (rSync.error) return // тихо: фоновий sync не показує помилок
     const syncRows = (rSync.data as SyncRow[]) || []
 
     // 2) Індекс наявних повних рядків за ключем (bib,day).
-    const prevFull = sumMode
+    const prevFull = effSum
       ? rowsRef.current.allResults
       : rowsRef.current.results
     const key = (bib: number, d: number) => `${bib}|${d}`
@@ -281,19 +332,23 @@ export function useLiveResults(args: Args) {
       const bibs = [...new Set(missing.map((m) => m.bib))]
       let fq = sb
         .from('results')
-        .select(RES_COLS)
+        .select(fullCols)
         .eq('event', eventId)
-        .eq('grp', grp)
         .in('bib', bibs)
-      if (!sumMode) fq = fq.eq('day', day)
+      if (!fav) fq = fq.eq('grp', grp)
+      if (!effSum) fq = fq.eq('day', day)
       const rFull = await fq
-      const fullRows = rFull.error ? [] : ((rFull.data as ResultRow[]) || [])
+      // fullCols — динамічний рядок (RES_COLS/RES_COLS_FAV), тип рядка не
+      // виводиться; приводимо через unknown.
+      const fullRows = rFull.error
+        ? []
+        : ((rFull.data as unknown as ResultRow[]) || [])
       merged.push(...fullRows)
     }
 
     // 5) Розкладаємо на results/allResults так само, як робив повний fetch.
-    const allResults = sumMode ? merged : []
-    const results = sumMode ? merged.filter((r) => r.day === day) : merged
+    const allResults = effSum ? merged : []
+    const results = effSum ? merged.filter((r) => r.day === day) : merged
 
     checkStale(allResults, results)
     setState((s) => ({
@@ -312,12 +367,20 @@ export function useLiveResults(args: Args) {
       // показувалися б старі/порожні дані (й помилковий empty-стан).
       setState((s) => (s.loading ? s : { ...s, loading: true }))
       if (sumMode) {
-        const r = await sb
-          .from('results')
-          .select(RES_COLS)
-          .eq('event', eventId)
-          .eq('grp', grp)
-        const allResults = r.error ? [] : ((r.data as ResultRow[]) || [])
+        // Залік за всі дні: «Обрані» — за обраними bib (усі групи), звичайна
+        // група — за grp. Поточний день виокремлюємо для тих видів, що його ще
+        // використовують.
+        const allResults =
+          grp === FAV_GRP
+            ? await fetchFavorites(true)
+            : await (async () => {
+                const r = await sb
+                  .from('results')
+                  .select(RES_COLS)
+                  .eq('event', eventId)
+                  .eq('grp', grp)
+                return r.error ? [] : ((r.data as ResultRow[]) || [])
+              })()
         setState((s) => ({
           ...s,
           allResults,
@@ -325,11 +388,12 @@ export function useLiveResults(args: Args) {
           loading: false,
         }))
       } else {
+        // Звичайна група або «Обрані» за день (fetchGroup розрізняє FAV_GRP).
         const results = await fetchGroup(grp)
-        setState((s) => ({ ...s, results, loading: false }))
+        setState((s) => ({ ...s, results, allResults: [], loading: false }))
       }
     },
-    [fetchGroup],
+    [fetchGroup, fetchFavorites],
   )
 
   // Ручне перепідключення (клік по «офлайн»): вмикаємо live назад, скидаємо
@@ -362,6 +426,29 @@ export function useLiveResults(args: Args) {
     void load(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day, sumMode])
+
+  // На вкладці «Обрані»: зміна складу обраних (додали/зняли зірочку) → тихо
+  // переотримуємо список (без спінера — швидке точкове оновлення). Решти вкладок
+  // це не стосується. favBibs.join — стабільний ключ за вмістом, не референцією.
+  const favKey = favBibs.join(',')
+  useEffect(() => {
+    if (activeGrp !== FAV_GRP) return
+    void (async () => {
+      if (sumMode) {
+        // «Сума»: тягнемо всі дні обраних для перерахунку заліку.
+        const allResults = await fetchFavorites(true)
+        setState((s) => ({
+          ...s,
+          allResults,
+          results: allResults.filter((r) => r.day === day),
+        }))
+      } else {
+        const results = await fetchFavorites(false)
+        setState((s) => ({ ...s, results, allResults: [] }))
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [favKey, activeGrp, sumMode, day])
 
   return { state, reload: load, switchGroup, reconnect }
 }

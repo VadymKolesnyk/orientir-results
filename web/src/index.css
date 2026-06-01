@@ -65,6 +65,41 @@ input.q {
 }
 .tabs a.on { background: linear-gradient(135deg, #222a92, #3d42c8); color: #fff; }
 
+/* Жовта вкладка «★ Обрані»: завжди видима, виокремлена кольором від решти. */
+.tabs a.fav { background: #fff3c4; color: #8a6d00; }
+.tabs a.fav.on { background: linear-gradient(135deg, #f2b705, #e69500); color: #fff; }
+
+/* Кнопка-зірочка в рядках результатів. Порожня (☆) — приглушено-сіра,
+ * активна (★) — жовта. Велика зона кліку, щоб не треба було цілитись. */
+.star {
+  font: inherit; line-height: 1; border: 0; background: none;
+  cursor: pointer; color: #c2c8da; font-size: 20px; border-radius: 8px;
+  /* Велика клікабельна площа: розтягуємо на всю клітинку + м'які відступи. */
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; min-height: 34px; padding: 6px;
+}
+.star:hover { color: #f2b705; background: #fff7da; }
+.star:active { background: #ffefb0; }
+.star.on { color: #f2b705; }
+/* Колонка зірочки. Прибираємо власні відступи клітинки — зона кліку (.star)
+ * заповнює всю клітинку, тож «цілитись» у саму зірочку не треба. */
+.col-star { width: 40px; text-align: center; padding: 2px 2px; }
+th.col-star { padding: 0; }
+
+/* Клікабельна назва групи у списку «Обрані» — веде на цю групу. */
+.grp-link {
+  color: #30349b; font-weight: 700; cursor: pointer; text-decoration: none;
+  border-bottom: 1px dotted rgba(48,52,155,.5);
+}
+.grp-link:hover { color: #222a92; border-bottom-style: solid; }
+
+/* Підсвітка рядка обраного — лагідно-жовтий фон. Важливо перебити
+ * tr:nth-child(even) td, щоб обраний рядок був жовтий завжди. */
+.fav-row td, tr.fav-row:nth-child(even) td { background: #fff8e1; }
+
+/* Заголовок виду «Обрані» — жовтий (замість червоного .ghead b). */
+.ghead b.fav-title { color: #e69500; }
+
 /* Перемикач днів: дозволяємо переноси на наступний рядок на вузьких екранах. */
 .day { flex-wrap: wrap; }
 .day button { white-space: nowrap; }

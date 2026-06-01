@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useLiveResults } from './hooks/useLiveResults'
+import { useFavorites } from './hooks/useFavorites'
 import { groupNames } from './lib/results'
+import { FAV_GRP } from './lib/favorites'
 import { parseRoute, replaceHash } from './lib/route'
 import { Header } from './components/Header'
 import { DayBar } from './components/DayBar'
@@ -8,6 +10,7 @@ import { SearchBox } from './components/SearchBox'
 import { GroupTabs } from './components/GroupTabs'
 import { ResultsTable } from './components/ResultsTable'
 import { SummaryTable } from './components/SummaryTable'
+import { FavoritesList } from './components/FavoritesList'
 import { UpdatedFooter } from './components/UpdatedFooter'
 
 // Маршрут читаємо з hash: …/#/{event}/{d1|d2|sum}. (Із запасним розбором
@@ -24,6 +27,10 @@ export function App() {
   const [activeGrp, setActiveGrp] = useState(route.grp)
   const [query, setQuery] = useState('')
 
+  // Обрані (зірочка) — локальний стан у localStorage для цього змагання.
+  // favBibs передаємо у useLiveResults; там його читають через власний ref.
+  const { bibs: favBibs, has: isFav, toggle: toggleFav } = useFavorites(eventId)
+
   // activeGrp потрібен синхронно всередині load() (через callback), тож тримаємо ref.
   const activeGrpRef = useRef(activeGrp)
   activeGrpRef.current = activeGrp
@@ -37,6 +44,8 @@ export function App() {
   // запиту результатів і за потреби узгоджує state (як renderTabs у оригіналі).
   const onGroupsResolved = useCallback((names: string[]) => {
     let grp = activeGrpRef.current
+    // Псевдогрупа «Обрані» завжди валідна (її немає серед names) — не відкидаємо.
+    if (grp === FAV_GRP) return grp
     if (!names.includes(grp)) {
       grp = names[0] || ''
       activeGrpRef.current = grp
@@ -61,6 +70,7 @@ export function App() {
     day,
     sumMode,
     activeGrp,
+    favBibs,
     onGroupsResolved,
     onStandingsOff,
   })
@@ -94,14 +104,20 @@ export function App() {
     [switchGroup, day, sumMode],
   )
 
+  const favView = activeGrp === FAV_GRP
+
   // --- Метарядок під заголовком ---
   const meta = useMemo(() => {
     const sub = state.event?.subtitle ? state.event.subtitle + ' · ' : ''
     if (!eventId) return ''
+    if (favView)
+      return sumMode
+        ? `${sub}Обрані · Залік за всі дні`
+        : `${sub}Обрані · День ${day} · учасників: ${state.results.length}`
     return sumMode
       ? `${sub}Залік за всі дні`
       : `${sub}День ${day} · учасників: ${state.results.length}`
-  }, [state.event, state.results.length, sumMode, day])
+  }, [state.event, state.results.length, sumMode, day, favView])
 
   const showPts = !!state.event?.standings
 
@@ -134,6 +150,32 @@ export function App() {
         <div className="empty-sub">Це займе кілька секунд</div>
       </div>
     )
+  } else if (favView && sumMode) {
+    // Обрані + «Сума»: залік за всі дні для обраних (agg по bib, з усіх груп).
+    content = (
+      <SummaryTable
+        allResults={state.allResults}
+        eventDays={state.eventDays}
+        activeGrp={activeGrp}
+        day={day}
+        query={query}
+        isFav={isFav}
+        onToggleFav={toggleFav}
+      />
+    )
+  } else if (favView) {
+    // Обрані — окремий вид: алфавітний список усіх позначених учасників
+    // (з усіх груп) за поточний день.
+    content = (
+      <FavoritesList
+        results={state.results}
+        query={query}
+        showPts={showPts}
+        isFav={isFav}
+        onToggleFav={toggleFav}
+        onSelectGroup={selectGroup}
+      />
+    )
   } else if (sumMode) {
     content = (
       <SummaryTable
@@ -142,6 +184,8 @@ export function App() {
         activeGrp={activeGrp}
         day={day}
         query={query}
+        isFav={isFav}
+        onToggleFav={toggleFav}
       />
     )
   } else {
@@ -152,6 +196,8 @@ export function App() {
         activeGrp={activeGrp}
         query={query}
         showPts={showPts}
+        isFav={isFav}
+        onToggleFav={toggleFav}
       />
     )
   }

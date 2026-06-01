@@ -28,6 +28,11 @@ export const STATUS_ORDER: Record<string, number> = {
 export const RES_COLS =
   'bib,day,rk,full_name,team,club,status,reason,start_time,result_time,result_seconds,points,updated_at';
 
+// Для виду «Обрані» тягнемо ще й grp — учасники зібрані з різних груп, тож треба
+// показати, з якої кожен (звичайні запити grp не тягнуть навмисно — він сталий
+// у межах запиту). grp додаємо в ResultRow як необов'язкове поле.
+export const RES_COLS_FAV = RES_COLS + ',grp';
+
 // Фоновий sync (polling/realtime) тягне ЛИШЕ ці колонки: ключ (bib,day) +
 // поля, що реально змінюються під час перегонів. Решта (full_name, team, club,
 // start_time) під час змагання стабільна — її лишаємо з уже завантаженого рядка.
@@ -85,4 +90,6 @@ export interface ResultRow {
   result_seconds: number | null;
   points: number | null;
   updated_at: string;
+  // Назва групи. Тягнемо лише для виду «Обрані» (RES_COLS_FAV); інакше undefined.
+  grp?: string | null;
 }
