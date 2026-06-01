@@ -61,6 +61,13 @@ input.q {
 }
 .tabs a.on { background: linear-gradient(135deg, #222a92, #3d42c8); color: #fff; }
 
+/* Перемикач днів: дозволяємо переноси на наступний рядок на вузьких екранах. */
+.day { flex-wrap: wrap; }
+.day button { white-space: nowrap; }
+/* Короткі/повні підписи кнопок днів — за замовчуванням повні (широкі екрани). */
+.lbl-short { display: none; }
+.lbl-full { display: inline; }
+
 .ghead { margin: 20px 0 8px; text-align: center; }
 .ghead b { color: #c0392b; font-size: 17px; }
 .ghead span { color: #5d6780; font-size: 13px; }
@@ -71,6 +78,11 @@ table {
 }
 th, td { padding: 9px 12px; text-align: left; font-size: 13px; border-bottom: 1px solid #eef0fb; }
 th { background: #e9ecf6; color: #3a3f63; font-size: 12px; font-weight: 700; }
+/* Заголовок «Місце»: повний / короткий («М») — за брейкпоінтами нижче. */
+.th-short { display: none; }
+.th-full { display: inline; }
+/* Клуб — лише на широких екранах (вмикається у min-width нижче). */
+.col-club { display: none; }
 tr:nth-child(even) td { background: #fafbff; }
 .rk { font-weight: 900; width: 46px; text-align: center; }
 .gold { color: #b8860b; } .silver { color: #7a7a8c; } .bronze { color: #a8682b; }
@@ -83,11 +95,29 @@ tr:nth-child(even) td { background: #fafbff; }
 .daycell .tm { color: #5d6780; font-size: 12px; }
 .flag { color: #c0392b; font-weight: 800; font-size: 12px; }
 .b-running { color: #30349b; font-weight: 700; font-size: 12px; }
-.empty { padding: 34px; text-align: center; color: #5d6780; }
+.empty { padding: 40px 24px; text-align: center; color: #5d6780; }
+.empty-title { font-size: 15px; font-weight: 700; color: #3a3f63; }
+.empty-sub { margin-top: 6px; font-size: 13px; color: #8a92aa; }
+/* Спінер для стану завантаження. */
+.spin {
+  display: block; width: 26px; height: 26px; margin: 0 auto 12px;
+  border: 3px solid rgba(48,52,155,.18); border-top-color: #3d42c8;
+  border-radius: 999px; animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 .upd { margin-top: 12px; color: #9aa2b8; font-size: 11px; text-align: right; }
 
 /* Таблиця може горизонтально скролитись, якщо все одно не влазить. */
 .tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* «Липка» шапка таблиці: при вертикальному скролі заголовки лишаються видні —
+ * глядач не губить, де яка колонка, навіть у довгих списках. */
+thead th { position: sticky; top: 0; z-index: 1; }
+
+/* --- Широкий екран (від 900px): додатково показуємо колонку «Клуб» --- */
+@media (min-width: 900px) {
+  .col-club { display: table-cell; }
+}
 
 /* --- Мобільний (екран до 560px) --- */
 @media (max-width: 560px) {
@@ -96,13 +126,49 @@ tr:nth-child(even) td { background: #fafbff; }
   h1 { font-size: 17px; }
   /* На вузькому екрані ховаємо найменш важливі колонки: № і Старт. */
   .col-bib, .col-start { display: none; }
-  /* У «Сумі» на мобільному лишаємо тільки № + бали днів + сума: ховаємо місце/час. */
+  /* У «Сумі» на мобільному лишаємо тільки № + бали днів + сума: ховаємо регіон/місце/час. */
   .col-detail { display: none; }
   th, td { padding: 8px 8px; font-size: 13px; }
-  .rk { width: 38px; }
+  .rk { width: 30px; }
+  /* «Місце» → «М», щоб колонка місця була максимально вузька. */
+  .th-full { display: none; }
+  .th-short { display: inline; }
   .ghead b { font-size: 16px; }
   .tabs a { font-size: 12px; padding: 5px 9px; }
   .day button { padding: 6px 11px; font-size: 12px; }
+  /* Короткі підписи днів («Д1», «Σ») на вузькому екрані. */
+  .lbl-full { display: none; }
+  .lbl-short { display: inline; }
   input.q { margin-left: 0; max-width: none; flex: 1 1 100%; }
   .upd { text-align: left; }
+}
+
+/* --- Дуже вузький / невисокий вертикальний екран (до 380px) ---
+ * Тут найчастіше з’являється зайвий скрол. Тиснемо все, що можна: відступи,
+ * шрифти, розміри елементів — щоб максимум влазив без прокручування. */
+@media (max-width: 380px) {
+  body { padding: 8px 6px; }
+  .card { padding: 10px; border-radius: 14px; }
+  h1 { font-size: 16px; }
+  .sub { font-size: 11px; }
+  .bar { gap: 6px; margin: 10px 0 4px; }
+  .day { gap: 4px; }
+  .day button { padding: 5px 9px; font-size: 12px; }
+  input.q { padding: 7px 10px; font-size: 13px; }
+  .tabs { gap: 4px; margin: 8px 0 2px; padding-bottom: 8px; }
+  .tabs a { font-size: 11px; padding: 4px 8px; }
+  .ghead { margin: 12px 0 6px; }
+  th, td { padding: 6px 6px; font-size: 12px; }
+  .ghead b { font-size: 15px; }
+  .empty { padding: 28px 16px; }
+}
+
+/* --- Низькі екрани (мала висота, напр. ландшафт телефона) ---
+ * Стискаємо вертикальні відступи, щоб шапка+перемикач не з’їдали висоту. */
+@media (max-height: 560px) {
+  body { padding: 8px; }
+  .card { padding: 12px; }
+  .bar { margin: 8px 0 4px; }
+  .ghead { margin: 10px 0 6px; }
+  th, td { padding: 6px 10px; }
 }

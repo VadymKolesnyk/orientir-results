@@ -1,4 +1,4 @@
-import { dayLabel } from '../lib/results'
+import { dayLabel, dayLabelShort } from '../lib/results'
 import type { EventDay, EventRow } from '../types'
 
 interface Props {
@@ -28,12 +28,14 @@ export function DayBar({
           className={!sumMode && d.day === day ? 'on' : ''}
           onClick={() => onSelectDay(d.day)}
         >
-          {dayLabel(d)}
+          <span className="lbl-full">{dayLabel(d)}</span>
+          <span className="lbl-short">{dayLabelShort(d)}</span>
         </button>
       ))}
       {event?.standings && (
         <button className={sumMode ? 'on' : ''} onClick={onSelectSum}>
-          Σ Сума
+          <span className="lbl-full">Σ Сума</span>
+          <span className="lbl-short">Σ</span>
         </button>
       )}
     </div>

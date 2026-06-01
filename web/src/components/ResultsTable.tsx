@@ -48,6 +48,7 @@ function ResultRowView({ r, showPts }: { r: ResultRow; showPts: boolean }) {
       <td>{r.full_name}</td>
       <td className="col-bib">{r.bib || ''}</td>
       <td>{r.team || ''}</td>
+      <td className="col-club">{r.club || ''}</td>
       <td className="time col-start" style={{ fontWeight: 400 }}>
         {r.start_time || ''}
       </td>
@@ -72,8 +73,23 @@ export function ResultsTable({
   let list = results.filter((r) => r.grp === activeGrp)
   if (q) list = list.filter((r) => matchesQuery(r, q))
 
-  if (!list.length)
-    return <div className="empty">Немає даних у цій групі</div>
+  if (!list.length) {
+    const msg = q
+      ? {
+          title: 'Нічого не знайдено',
+          sub: `За запитом «${query.trim()}» немає учасників`,
+        }
+      : {
+          title: 'У цій групі ще немає результатів',
+          sub: 'Тут з’являться учасники, щойно стартує група',
+        }
+    return (
+      <div className="empty">
+        <div className="empty-title">{msg.title}</div>
+        <div className="empty-sub">{msg.sub}</div>
+      </div>
+    )
+  }
 
   list = [...list].sort(cmp)
 
@@ -103,10 +119,14 @@ export function ResultsTable({
         <table>
           <thead>
             <tr>
-              <th className="rk">Місце</th>
+              <th className="rk">
+                <span className="th-full">Місце</span>
+                <span className="th-short">М</span>
+              </th>
               <th>Прізвище, ім'я</th>
               <th className="col-bib">№</th>
-              <th>Команда</th>
+              <th>Регіон</th>
+              <th className="col-club">Клуб</th>
               <th className="col-start">Старт</th>
               <th>Час</th>
               {showPts && <th className="pts">Бали</th>}

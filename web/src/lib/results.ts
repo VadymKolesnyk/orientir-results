@@ -33,8 +33,15 @@ export function groupNames(groups: GroupRow[]): string[] {
   )
 }
 
+// Повний підпис дня (широкі екрани): «День 1 · Спринт» або «День 1».
 export function dayLabel(d: EventDay): string {
   return d.label ? `День ${d.day} · ${d.label}` : `День ${d.day}`
+}
+
+// Короткий підпис дня (вузькі екрани): «Д1». Мітку дня (label) опускаємо —
+// вона надто довга для маленької кнопки, лишаємо тільки номер.
+export function dayLabelShort(d: EventDay): string {
+  return `Д${d.day}`
 }
 
 // Фільтр пошуку: ПІБ / команда / клуб / номер (lowercase substring).
@@ -55,6 +62,7 @@ export interface SummaryPerson {
   bib: number
   name: string
   team: string
+  club: string
   byDay: Record<number, ResultRow>
   total: number
 }
@@ -115,14 +123,16 @@ export function aggregateSummary(
         bib: r.bib,
         name: r.full_name || '',
         team: r.team || '',
+        club: r.club || '',
         byDay: {},
         total: 0,
       })
     const p = m.get(r.bib)!
     p.byDay[r.day] = r
-    // Найсвіжіше ПІБ/команду беремо з будь-якого дня (можуть бути порожні).
+    // Найсвіжіше ПІБ/регіон/клуб беремо з будь-якого дня (можуть бути порожні).
     if (r.full_name) p.name = r.full_name
     if (r.team) p.team = r.team
+    if (r.club) p.club = r.club
     p.total += Number(r.points) || 0 // бали є лише у фінішерів; решта — 0
   }
   return [...m.values()]
@@ -146,6 +156,7 @@ export function matchesPersonQuery(p: SummaryPerson, q: string): boolean {
   return (
     (p.name || '').toLowerCase().includes(q) ||
     (p.team || '').toLowerCase().includes(q) ||
+    (p.club || '').toLowerCase().includes(q) ||
     String(p.bib).includes(q)
   )
 }

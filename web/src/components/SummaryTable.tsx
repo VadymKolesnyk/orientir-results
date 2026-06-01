@@ -33,8 +33,23 @@ export function SummaryTable({
   let people = aggregateSummary(allResults, activeGrp)
   if (q) people = people.filter((p) => matchesPersonQuery(p, q))
 
-  if (!people.length)
-    return <div className="empty">Немає даних для заліку в цій групі</div>
+  if (!people.length) {
+    const msg = q
+      ? {
+          title: 'Нічого не знайдено',
+          sub: `За запитом «${query.trim()}» немає учасників`,
+        }
+      : {
+          title: 'Залік ще порожній',
+          sub: 'Бали з’являться після перших фінішів у групі',
+        }
+    return (
+      <div className="empty">
+        <div className="empty-title">{msg.title}</div>
+        <div className="empty-sub">{msg.sub}</div>
+      </div>
+    )
+  }
 
   // Сортування за сумою балів (спадання) з тай-брейком: к-ть результатів,
   // потім бали за останнім → попереднім днем.
@@ -49,10 +64,14 @@ export function SummaryTable({
         <table>
           <thead>
             <tr>
-              <th className="rk">Місце</th>
+              <th className="rk">
+                <span className="th-full">Місце</span>
+                <span className="th-short">М</span>
+              </th>
               <th>Прізвище, ім'я</th>
               <th className="col-bib">№</th>
-              <th className="col-detail">Команда</th>
+              <th className="col-detail">Регіон</th>
+              <th className="col-club">Клуб</th>
               {days.map((d) => (
                 <Fragment key={d}>
                   <th className="col-detail">М</th>
@@ -75,6 +94,7 @@ export function SummaryTable({
                   <td>{p.name || ''}</td>
                   <td className="col-bib">{p.bib || ''}</td>
                   <td className="col-detail">{p.team || ''}</td>
+                  <td className="col-club">{p.club || ''}</td>
                   {days.map((d) => {
                     const r = p.byDay[d]
                     const fin =

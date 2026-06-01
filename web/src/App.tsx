@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useLiveResults } from './hooks/useLiveResults'
 import { groupNames } from './lib/results'
+import { parseRoute, replaceHash } from './lib/route'
 import { Header } from './components/Header'
 import { DayBar } from './components/DayBar'
 import { SearchBox } from './components/SearchBox'
@@ -9,14 +10,15 @@ import { ResultsTable } from './components/ResultsTable'
 import { SummaryTable } from './components/SummaryTable'
 import { UpdatedFooter } from './components/UpdatedFooter'
 
-const params = new URLSearchParams(location.search)
-const eventId = params.get('event') || '' // ?event=kyiv2025
-const dayParam = (params.get('day') || '').toLowerCase() // ?day=1 або ?day=summ
+// Маршрут читаємо з hash: …/#/{event}/{d1|d2|sum}. (Із запасним розбором
+// старого ?event=&day= — див. parseRoute.)
+const route = parseRoute()
+const eventId = route.event
 
 export function App() {
-  // «Сума» (залік за всі дні) задається як ?day=summ. Інакше day — номер дня.
-  const [sumMode, setSumMode] = useState(dayParam === 'summ')
-  const [day, setDay] = useState(dayParam === 'summ' ? 1 : Number(dayParam) || 1)
+  // «Сума» (залік за всі дні) — сегмент sum у hash. Інакше day — номер дня.
+  const [sumMode, setSumMode] = useState(route.sumMode)
+  const [day, setDay] = useState(route.day)
   const [activeGrp, setActiveGrp] = useState('')
   const [query, setQuery] = useState('')
 
@@ -56,10 +58,7 @@ export function App() {
       if (!sumMode && d === day) return
       setSumMode(false)
       setDay(d)
-      const u = new URL(location.href)
-      u.searchParams.set('day', String(d))
-      u.searchParams.delete('sum')
-      history.replaceState(null, '', u)
+      replaceHash({ event: eventId, day: d, sumMode: false })
     },
     [sumMode, day],
   )
@@ -67,11 +66,8 @@ export function App() {
   const selectSum = useCallback(() => {
     if (sumMode) return
     setSumMode(true)
-    const u = new URL(location.href)
-    u.searchParams.set('day', 'summ')
-    u.searchParams.delete('sum')
-    history.replaceState(null, '', u)
-  }, [sumMode])
+    replaceHash({ event: eventId, day, sumMode: true })
+  }, [sumMode, day])
 
   const selectGroup = useCallback(
     (grp: string) => {
@@ -99,13 +95,24 @@ export function App() {
     content = (
       <div className="empty">
         Не вказано змагання. Додай у посилання{' '}
-        <b>?event=&lt;id&gt;&amp;day=1</b>.
+        <b>#/&lt;id&gt;/d1</b> (або <b>/sum</b> для заліку).
       </div>
     )
   } else if (state.error) {
-    content = <div className="empty">Помилка: {state.error}</div>
+    content = (
+      <div className="empty">
+        <div className="empty-title">Не вдалося завантажити результати</div>
+        <div className="empty-sub">{state.error}</div>
+      </div>
+    )
   } else if (state.loading && !state.results.length && !state.allResults.length) {
-    content = <div className="empty">Завантаження…</div>
+    content = (
+      <div className="empty">
+        <span className="spin" aria-hidden="true" />
+        <div className="empty-title">Завантажуємо результати…</div>
+        <div className="empty-sub">Це займе кілька секунд</div>
+      </div>
+    )
   } else if (sumMode) {
     content = (
       <SummaryTable
