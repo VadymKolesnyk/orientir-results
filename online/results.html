@@ -189,14 +189,22 @@ async function fetchGroup(grp){
   return r.error ? [] : (r.data || []);
 }
 
-// Стежимо за «свіжістю»: якщо макс updated_at не змінився STALE_LIMIT разів
-// поспіль — змагання, найімовірніше, завершене → переходимо в офлайн.
+// Стежимо за «свіжістю»: якщо остання зміна давніша за пів години — змагання
+// завершене → офлайн. Якщо дані свіжі — лишаємось/повертаємось в онлайн.
+// Викликається щоразу в load(), зокрема при перемиканні дня/групи/«Суми»,
+// тож зміна дня також перевіряє онлайн/офлайн і за потреби перепідключає.
 function checkStale(){
   const src = (allResults.length ? allResults : results);
   const cur = src.reduce((m, r) => r.updated_at > m ? r.updated_at : m, '');
-  if (!cur) return;                       // ще немає даних — не рахуємо стейл
-  // Остання зміна давніша за пів години → змагання завершене, одразу офлайн.
-  if (Date.now() - new Date(cur).getTime() > STALE_MS){ goOffline(); return; }
+  if (!cur) return;                       // ще немає даних — стан не чіпаємо
+
+  const fresh = Date.now() - new Date(cur).getTime() <= STALE_MS;
+  if (!fresh){ goOffline(); return; }     // старіше за пів години → офлайн
+
+  // Дані свіжі. Якщо були офлайн — пробуємо повернутись в онлайн.
+  if (offline) goBackOnline();
+
+  // Лічильник «застою» для авто-офлайну під час сесії (updated_at не рухається).
   if (lastSync === null){ lastSync = cur; staleCount = 0; return; }
   if (cur === lastSync){
     if (++staleCount >= STALE_LIMIT) goOffline();
@@ -211,6 +219,27 @@ function goOffline(){
   if (pollTimer){ clearInterval(pollTimer); pollTimer = null; }
   if (liveChannel){ sb.removeChannel(liveChannel); liveChannel = null; }
   touch();
+}
+
+// Повернення в онлайн: знову вмикаємо realtime + опитування й скидаємо «застій».
+function goBackOnline(){
+  offline = false;
+  staleCount = 0;
+  lastSync = null;
+  startLive();
+  touch();
+}
+
+// (Пере)підписка на realtime + запасне опитування раз на 10 с.
+function startLive(){
+  if (!liveChannel){
+    liveChannel = sb.channel('live')
+      .on('postgres_changes', { event:'*', schema:'public', table:'results' }, () => { if (!offline) load(); })
+      .subscribe();
+  }
+  if (!pollTimer){
+    pollTimer = setInterval(() => { if (!offline) load(); }, 10000);
+  }
 }
 
 function renderHeader(){
@@ -475,11 +504,9 @@ $('q').addEventListener('input', render);
 load();
 
 // Realtime (якщо увімкнено в Supabase) + запасне опитування раз на 10 с.
-// Обидва зупиняються в goOffline(); перепідключення — перезавантаженням сторінки.
-liveChannel = sb.channel('live')
-  .on('postgres_changes', { event:'*', schema:'public', table:'results' }, () => { if (!offline) load(); })
-  .subscribe();
-pollTimer = setInterval(() => { if (!offline) load(); }, 10000);
+// Зупиняються в goOffline(); знову вмикаються в goBackOnline() (зокрема коли
+// при перемиканні дня виявляється, що дані знову свіжі).
+startLive();
 </script>
 </body>
 </html>

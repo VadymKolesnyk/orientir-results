@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -File \"$CLAUDE_PROJECT_DIR\\.claude\\hooks\\format-cs.ps1\"",
+            "timeout": 60,
+            "statusMessage": "dotnet format"
+          }
+        ]
+      }
+    ]
+  }
+}

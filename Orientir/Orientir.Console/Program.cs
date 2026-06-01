@@ -1,4 +1,5 @@
 using System.Text;
+using Orientir.Core;
 using Orientir.Core.Services;
 using Orientir.ConsoleApp.UI;
 
@@ -12,12 +13,13 @@ internal static class Program
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         Console.OutputEncoding = Encoding.UTF8;
 
-        // БД налаштувань поруч із застосунком.
-        var dbPath = Path.Combine(AppContext.BaseDirectory, "orientir-settings.db");
-        using var settings = new SettingsService(dbPath);
+        // БД налаштувань — у папці data поруч із застосунком (створюється автоматично).
+        using var settings = new SettingsService(AppPaths.SettingsDb);
 
         // Одноразовий імпорт старого appsettings.json (формат pusher), якщо БД порожня.
-        var legacyPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+        // Спершу шукаємо в data, потім поруч із exe, потім у поточній папці (сумісність).
+        var legacyPath = AppPaths.LegacyAppSettings;
+        if (!File.Exists(legacyPath)) legacyPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
         if (!File.Exists(legacyPath)) legacyPath = "appsettings.json";
         if (settings.ImportLegacyIfEmpty(legacyPath))
         {
@@ -51,7 +53,8 @@ internal static class Program
                 new("2", "Змагання (список / додати / редагувати)", "/events", screens.ManageEvents),
                 new("3", "Запустити публікацію", "/run", screens.RunPublisher),
                 new("4", "Конвертувати HTML-звіти", "/html", screens.ConvertHtml),
-                new("5", "Dry-run (перевірка без відправки)", "/dry", screens.DryRun),
+                new("5", "Word-звіт «Сума» (.docx)", "/word", screens.WordReport),
+                new("6", "Dry-run (перевірка без відправки)", "/dry", screens.DryRun),
                 new("0", "Вихід", "/exit", () => { exit = true; }),
             ]);
 

@@ -156,5 +156,29 @@
             </Grid>
         </TabItem>
 
+        <!-- 5. Word-звіт «Сума» -->
+        <TabItem Header="Word-звіт">
+            <Grid Margin="16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,10"
+                           Text="Генерація друкованого протоколу зведеного заліку («Сума» за всі дні) у форматі Word (.docx). Плашка й підписи беруться автоматично з DBF теки змагання." />
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+                    <TextBlock Text="Змагання:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <ComboBox x:Name="CmbWordEvent" Width="280" DisplayMemberPath="Title" Margin="0,0,16,0" />
+                    <TextBlock Text="Орієнтація:" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <ComboBox x:Name="CmbWordOrient" Width="130" Margin="0,0,16,0" SelectedIndex="0">
+                        <ComboBoxItem Content="Альбомна" />
+                        <ComboBoxItem Content="Портретна" />
+                    </ComboBox>
+                    <Button Content="Згенерувати .docx…" Width="170" Click="GenerateWord_Click" />
+                </StackPanel>
+                <ListBox Grid.Row="2" x:Name="LstWordLog" FontFamily="Consolas" FontSize="12" />
+            </Grid>
+        </TabItem>
+
     </TabControl>
 </Window>

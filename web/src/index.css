@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+/* ----------------------------------------------------------------------
+ *  Стилі портовані 1:1 з online/results.html. Tailwind підключено, але
+ *  оскільки оригінал — компактний набір класів зі складними градієнтами
+ *  й анімацією, тримаємо їх явним CSS (легше звірити піксель-в-піксель),
+ *  а Tailwind лишається доступним для дрібних правок.
+ * -------------------------------------------------------------------- */
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  color: #17182f;
+  background:
+    radial-gradient(circle at top right, rgba(79,97,216,.16), transparent 34%),
+    linear-gradient(180deg, #f6f9ff, #edf5ff);
+  min-height: 100vh;
+  padding: 22px 14px;
+}
+.wrap { max-width: 1100px; margin: 0 auto; }
+.card {
+  padding: 20px;
+  border: 1px solid rgba(48,52,155,.14);
+  border-radius: 22px;
+  background: rgba(255,255,255,.82);
+  box-shadow: 0 14px 34px rgba(28,45,96,.08);
+}
+.top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+h1 { margin: 0; font-size: 20px; }
+.sub { margin: 2px 0 0; color: #5d6780; font-size: 12px; }
+.live { display: inline-flex; align-items: center; gap: 6px; color: #2f9e5c; font-size: 12px; font-weight: 700; }
+.dot { width: 8px; height: 8px; border-radius: 999px; background: #2f9e5c; animation: p 1.6s infinite; }
+.live.off { color: #9aa2b8; }
+.live.off .dot { background: #9aa2b8; animation: none; }
+@keyframes p {
+  0%   { box-shadow: 0 0 0 0 rgba(47,158,92,.5); }
+  70%  { box-shadow: 0 0 0 9px rgba(47,158,92,0); }
+  100% { box-shadow: 0 0 0 0 rgba(47,158,92,0); }
+}
+
+.bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 14px 0 6px; }
+.day { display: flex; gap: 6px; }
+.day button {
+  padding: 7px 14px; border: 1px solid rgba(48,52,155,.22); border-radius: 10px; background: #fff;
+  color: #30349b; font-size: 13px; font-weight: 700; cursor: pointer;
+}
+.day button.on { background: linear-gradient(135deg, #222a92, #3d42c8); color: #fff; border-color: transparent; }
+input.q {
+  margin-left: auto; padding: 8px 12px; border: 1px solid rgba(48,52,155,.22); border-radius: 10px;
+  font-size: 14px; flex: 1 1 180px; max-width: 280px;
+}
+
+.tabs {
+  display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; padding-bottom: 10px;
+  border-bottom: 1px solid rgba(48,52,155,.12);
+}
+.tabs a {
+  padding: 5px 11px; border-radius: 999px; font-size: 13px; text-decoration: none; cursor: pointer;
+  color: #30349b; background: #eef0fb; font-weight: 700;
+}
+.tabs a.on { background: linear-gradient(135deg, #222a92, #3d42c8); color: #fff; }
+
+.ghead { margin: 20px 0 8px; text-align: center; }
+.ghead b { color: #c0392b; font-size: 17px; }
+.ghead span { color: #5d6780; font-size: 13px; }
+
+table {
+  width: 100%; border-collapse: collapse; background: #fff; border-radius: 14px; overflow: hidden;
+  box-shadow: 0 8px 20px rgba(28,45,96,.06);
+}
+th, td { padding: 9px 12px; text-align: left; font-size: 13px; border-bottom: 1px solid #eef0fb; }
+th { background: #e9ecf6; color: #3a3f63; font-size: 12px; font-weight: 700; }
+tr:nth-child(even) td { background: #fafbff; }
+.rk { font-weight: 900; width: 46px; text-align: center; }
+.gold { color: #b8860b; } .silver { color: #7a7a8c; } .bronze { color: #a8682b; }
+.time { font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+.pts { font-variant-numeric: tabular-nums; font-weight: 800; text-align: right; white-space: nowrap; color: #222a92; }
+.pts.win { color: #2f9e5c; }
+.total { font-variant-numeric: tabular-nums; font-weight: 900; text-align: right; white-space: nowrap; color: #c0392b; }
+.daycell { white-space: nowrap; }
+.daycell .pl { font-weight: 900; color: #3a3f63; }
+.daycell .tm { color: #5d6780; font-size: 12px; }
+.flag { color: #c0392b; font-weight: 800; font-size: 12px; }
+.b-running { color: #30349b; font-weight: 700; font-size: 12px; }
+.empty { padding: 34px; text-align: center; color: #5d6780; }
+.upd { margin-top: 12px; color: #9aa2b8; font-size: 11px; text-align: right; }
+
+/* Таблиця може горизонтально скролитись, якщо все одно не влазить. */
+.tbl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* --- Мобільний (екран до 560px) --- */
+@media (max-width: 560px) {
+  body { padding: 12px 8px; }
+  .card { padding: 14px; border-radius: 16px; }
+  h1 { font-size: 17px; }
+  /* На вузькому екрані ховаємо найменш важливі колонки: № і Старт. */
+  .col-bib, .col-start { display: none; }
+  /* У «Сумі» на мобільному лишаємо тільки № + бали днів + сума: ховаємо місце/час. */
+  .col-detail { display: none; }
+  th, td { padding: 8px 8px; font-size: 13px; }
+  .rk { width: 38px; }
+  .ghead b { font-size: 16px; }
+  .tabs a { font-size: 12px; padding: 5px 9px; }
+  .day button { padding: 6px 11px; font-size: 12px; }
+  input.q { margin-left: 0; max-width: none; flex: 1 1 100%; }
+  .upd { text-align: left; }
+}

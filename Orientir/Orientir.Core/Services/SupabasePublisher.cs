@@ -96,10 +96,10 @@ public class SupabasePublisher
                     if (results.Count > 0)
                     {
                         await Push("results", "event,bib,day", results, ct);
-                        // учасників — усі записи; результатів — реально фінішували;
-                        // біжать — стартували, але ще не фінішували.
-                        int finished = results.Count(r => (string)r["status"]! is "finished" or "finished_pending");
+                        // учасників — усі записи; біжать — ще на дистанції (running);
+                        // результатів — усі, хто вже не біжить (учасників − біжать).
                         int running  = results.Count(r => (string)r["status"]! == "running");
+                        int finished = results.Count - running;
                         log?.Report($"[{Now()}] {ev.Slug} день {d.Day}: учасників {results.Count} (результатів {finished}, біжать {running})");
                     }
                 }

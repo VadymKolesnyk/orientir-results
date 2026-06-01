@@ -18,11 +18,9 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        var dbPath = Path.Combine(AppContext.BaseDirectory, "orientir-settings.db");
-        _settings = new SettingsService(dbPath);
-
-        var legacy = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
-        _settings.ImportLegacyIfEmpty(legacy);
+        // Усі дані пишемо в папку data поруч із exe (створюється автоматично).
+        _settings = new SettingsService(AppPaths.SettingsDb);
+        _settings.ImportLegacyIfEmpty(AppPaths.LegacyAppSettings);
 
         SetSettingsEditMode(false); // стартуємо в режимі перегляду (ключ замаскований)
         ReloadEvents();
@@ -92,6 +90,7 @@ public partial class MainWindow : Window
     {
         var events = _settings.GetEvents();
         GridEvents.ItemsSource = events;
+        CmbWordEvent.ItemsSource = events; // той самий перелік для Word-звіту
     }
 
     private void GridEvents_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -342,5 +341,44 @@ public partial class MainWindow : Window
             }
         }
         LstHtmlLog.Items.Add($"Готово: {ok} успішно, {err} з помилками.");
+    }
+
+    // ====================================================================
+    //  Word-звіт «Сума»
+    // ====================================================================
+    private void GenerateWord_Click(object sender, RoutedEventArgs e)
+    {
+        if (CmbWordEvent.SelectedItem is not EventConfig ev)
+        {
+            MessageBox.Show("Оберіть змагання зі списку.", "Orientir",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var dlg = new SaveFileDialog
+        {
+            Title = "Зберегти Word-звіт",
+            Filter = "Word-документ (*.docx)|*.docx",
+            FileName = $"{ev.Slug}-suma.docx",
+        };
+        if (!string.IsNullOrWhiteSpace(ev.BasePath) && Directory.Exists(ev.BasePath))
+            dlg.InitialDirectory = ev.BasePath;
+        if (dlg.ShowDialog() != true) return;
+
+        var orientation = CmbWordOrient.SelectedIndex == 1
+            ? WordReportGenerator.Orientation.Portrait
+            : WordReportGenerator.Orientation.Landscape;
+
+        LstWordLog.Items.Clear();
+        try
+        {
+            var dst = WordReportGenerator.Generate(ev, dlg.FileName, orientation);
+            LstWordLog.Items.Add($"Готово: {dst}");
+        }
+        catch (Exception ex)
+        {
+            LstWordLog.Items.Add($"ПОМИЛКА: {ex.Message}");
+            MessageBox.Show(ex.Message, "Orientir", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 }

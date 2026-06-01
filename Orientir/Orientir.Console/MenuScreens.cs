@@ -404,7 +404,64 @@ internal class MenuScreens
     }
 
     // ====================================================================
-    //  5. Dry-run
+    //  5. Word-звіт «Сума» (.docx)
+    // ====================================================================
+    public void WordReport()
+    {
+        var events = _settings.GetEvents();
+        ConsoleBuffer.Draw();
+        Console.Clear();
+        Console.WriteLine("--- Word-звіт «Сума» (.docx) ---\n");
+
+        if (events.Count == 0)
+        {
+            Console.WriteLine("Немає жодного змагання. Спочатку додайте його у розділі «Змагання».");
+            Console.WriteLine("\nНатисніть будь-яку клавішу...");
+            Console.ReadKey(true);
+            return;
+        }
+
+        // Вибір змагання.
+        for (int i = 0; i < events.Count; i++)
+            Console.WriteLine($"  {i + 1}. {events[i].Slug} — {events[i].Title}");
+        Console.Write("\nНомер змагання (Enter — скасувати): ");
+        var sel = Console.ReadLine()?.Trim();
+        if (!int.TryParse(sel, out var idx) || idx < 1 || idx > events.Count) return;
+        var ev = events[idx - 1];
+
+        // Орієнтація сторінки (за замовчуванням альбомна).
+        Console.Write("\nОрієнтація: 1 — Альбомна (типово), 2 — Портретна: ");
+        var orInput = Console.ReadLine()?.Trim();
+        var orientation = orInput == "2"
+            ? WordReportGenerator.Orientation.Portrait
+            : WordReportGenerator.Orientation.Landscape;
+
+        // Шлях для збереження .docx.
+        Console.WriteLine("\nШлях для збереження .docx (Enter — у теці змагання):");
+        var outPath = ConsoleInput.ReadPathInput(ev.BasePath);
+        if (string.IsNullOrWhiteSpace(outPath))
+            outPath = Path.Combine(ev.BasePath, $"{ev.Slug}-suma.docx");
+        else if (Directory.Exists(outPath))
+            outPath = Path.Combine(outPath, $"{ev.Slug}-suma.docx");
+        else if (!outPath.EndsWith(".docx", StringComparison.OrdinalIgnoreCase))
+            outPath += ".docx";
+
+        Console.Clear();
+        try
+        {
+            var dst = WordReportGenerator.Generate(ev, outPath, orientation);
+            Console.WriteLine($"Готово: {dst}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"ПОМИЛКА: {ex.Message}");
+        }
+        Console.WriteLine("\nНатисніть будь-яку клавішу...");
+        Console.ReadKey(true);
+    }
+
+    // ====================================================================
+    //  6. Dry-run
     // ====================================================================
     public void DryRun()
     {

@@ -8,6 +8,20 @@
     <UseWPF>true</UseWPF>
     <RootNamespace>Orientir.Desktop</RootNamespace>
     <AssemblyName>Orientir.Desktop</AssemblyName>
+
+    <!-- Цільова платформа для self-contained публікації (один exe без .NET).
+         RuntimeIdentifiers (множина) НЕ форсує RID при build/run, тож звичайний
+         `dotnet build`/`dotnet run` лишається швидким. RID задаємо в команді publish. -->
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+
+    <!-- Параметри single-file/self-contained, що діють лише коли публікуємо
+         з RID (тобто під час `dotnet publish -r win-x64`). -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- WPF + EF Core несумісні з trimming, тому НЕ обрізаємо. -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <SatelliteResourceLanguages>uk;en</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <ItemGroup>
