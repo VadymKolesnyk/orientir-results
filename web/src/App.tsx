@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveResults } from './hooks/useLiveResults'
 import { useFavorites } from './hooks/useFavorites'
 import { groupNames } from './lib/results'
 import { FAV_GRP } from './lib/favorites'
-import { parseRoute, replaceHash } from './lib/route'
+import { loadRecent, pushRecent } from './lib/recent'
+import { parseRoute, replaceHash, buildHash } from './lib/route'
 import { Header } from './components/Header'
 import { DayBar } from './components/DayBar'
 import { SearchBox } from './components/SearchBox'
@@ -26,6 +27,10 @@ export function App() {
   // Якщо такої групи не виявиться серед доступних — onGroupsResolved відкине її.
   const [activeGrp, setActiveGrp] = useState(route.grp)
   const [query, setQuery] = useState('')
+
+  // Нещодавно відкриті змагання (для кореневої сторінки без event у URL).
+  // Читаємо один раз при монтуванні — на цій сторінці список не змінюється.
+  const [recent] = useState(loadRecent)
 
   // Обрані (зірочка) — локальний стан у localStorage для цього змагання.
   // favBibs передаємо у useLiveResults; там його читають через власний ref.
@@ -104,6 +109,45 @@ export function App() {
     [switchGroup, day, sumMode],
   )
 
+  // Реакція на зовнішню зміну URL: ручне редагування hash, кнопки «назад/вперед»
+  // браузера. Перечитуємо маршрут і застосовуємо лише те, що реально змінилось
+  // (інакше зайві перезавантаження). Наш власний replaceHash теж шле hashchange —
+  // але до цього моменту state вже збігається з URL, тож нічого не робимо.
+  useEffect(() => {
+    const onHashChange = () => {
+      const r = parseRoute()
+      // Зміна змагання — найважчий випадок (інший набір даних, обрані тощо).
+      // Найнадійніше — повне перезавантаження сторінки під новий eventId.
+      if (r.event !== eventId) {
+        location.reload()
+        return
+      }
+      if (r.sumMode !== sumModeRef.current) {
+        setSumMode(r.sumMode)
+        sumModeRef.current = r.sumMode
+      }
+      if (r.day !== dayRef.current) {
+        setDay(r.day)
+        dayRef.current = r.day
+      }
+      if (r.grp && r.grp !== activeGrpRef.current) {
+        setActiveGrp(r.grp)
+        activeGrpRef.current = r.grp
+        void switchGroup(r.grp)
+      }
+    }
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [switchGroup])
+
+  // Запам'ятовуємо відкрите змагання у списку нещодавніх (до 5), щойно
+  // підтягнулись його метадані. title беремо з даних, інакше — сам id.
+  useEffect(() => {
+    // eventId — стала на рівні модуля (не залежність); стежимо за state.event.
+    if (eventId && state.event)
+      pushRecent(eventId, state.event.title || eventId)
+  }, [state.event])
+
   const favView = activeGrp === FAV_GRP
 
   // --- Метарядок під заголовком ---
@@ -126,8 +170,32 @@ export function App() {
   if (!eventId) {
     content = (
       <div className="empty">
-        Не вказано змагання. Додай у посилання{' '}
-        <b>#/&lt;id&gt;/d1</b> (або <b>/sum</b> для заліку).
+        <div className="empty-title">Не вказано змагання</div>
+        <div className="empty-sub">
+          Додай у посилання <b>#/&lt;id&gt;/d1</b> (або <b>/sum</b> для заліку).
+        </div>
+        {recent.length > 0 && (
+          <div className="recent">
+            <div className="recent-head">Нещодавно відкриті:</div>
+            <ul className="recent-list">
+              {recent.map((e) => (
+                <li key={e.id}>
+                  <a
+                    className="recent-link"
+                    href={buildHash({
+                      event: e.id,
+                      day: 1,
+                      sumMode: false,
+                      grp: '',
+                    })}
+                  >
+                    {e.title}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     )
   } else if (state.error) {

@@ -137,6 +137,17 @@ tr:nth-child(even) td { background: #fafbff; }
 .empty { padding: 40px 24px; text-align: center; color: #5d6780; }
 .empty-title { font-size: 15px; font-weight: 700; color: #3a3f63; }
 .empty-sub { margin-top: 6px; font-size: 13px; color: #8a92aa; }
+
+/* Список нещодавно відкритих змагань на кореневій сторінці. */
+.recent { margin-top: 20px; }
+.recent-head { font-size: 12px; font-weight: 700; color: #8a92aa; margin-bottom: 8px; }
+.recent-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.recent-link {
+  display: inline-block; padding: 8px 16px; border-radius: 10px;
+  background: #eef0fb; color: #30349b; font-weight: 700; font-size: 14px;
+  text-decoration: none; max-width: 100%;
+}
+.recent-link:hover { background: linear-gradient(135deg, #222a92, #3d42c8); color: #fff; }
 /* Спінер для стану завантаження. */
 .spin {
   display: block; width: 26px; height: 26px; margin: 0 auto 12px;

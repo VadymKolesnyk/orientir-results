@@ -2,9 +2,10 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-// Pages розгортає проектний репо в підшлях з ім'ям репо, тож base має його містити,
-// інакше asset-шляхи (/assets/...) дадуть 404. Сайт буде на …/orientir-results/.
+// Сайт віддається з кореня власного домену (custom domain у Settings → Pages),
+// тож base = '/'. Підшлях /orientir-results/ більше не потрібен. CNAME-файл у
+// public/ зберігає домен при кожному деплої через GitHub Actions.
 export default defineConfig({
-  base: '/orientir-results/',
+  base: '/',
   plugins: [react(), tailwindcss()],
 })
