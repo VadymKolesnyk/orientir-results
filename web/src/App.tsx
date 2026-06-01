@@ -19,12 +19,19 @@ export function App() {
   // «Сума» (залік за всі дні) — сегмент sum у hash. Інакше day — номер дня.
   const [sumMode, setSumMode] = useState(route.sumMode)
   const [day, setDay] = useState(route.day)
-  const [activeGrp, setActiveGrp] = useState('')
+  // Початкова група — з URL (route.grp), щоб після F5 лишатись на ній.
+  // Якщо такої групи не виявиться серед доступних — onGroupsResolved відкине її.
+  const [activeGrp, setActiveGrp] = useState(route.grp)
   const [query, setQuery] = useState('')
 
   // activeGrp потрібен синхронно всередині load() (через callback), тож тримаємо ref.
   const activeGrpRef = useRef(activeGrp)
   activeGrpRef.current = activeGrp
+  // day/sumMode теж читаємо через ref у onGroupsResolved (deps=[], інакше стейл).
+  const dayRef = useRef(day)
+  dayRef.current = day
+  const sumModeRef = useRef(sumMode)
+  sumModeRef.current = sumMode
 
   // Викликається з load() ПІСЛЯ отримання груп: повертає активну групу для
   // запиту результатів і за потреби узгоджує state (як renderTabs у оригіналі).
@@ -34,6 +41,14 @@ export function App() {
       grp = names[0] || ''
       activeGrpRef.current = grp
       setActiveGrp(grp)
+      // Узгоджуємо URL: група з лінка не знайшлась (або була порожня) —
+      // фіксуємо реально обрану, щоб F5 лишався на ній.
+      replaceHash({
+        event: eventId,
+        day: dayRef.current,
+        sumMode: sumModeRef.current,
+        grp,
+      })
     }
     return grp
   }, [])
@@ -58,24 +73,25 @@ export function App() {
       if (!sumMode && d === day) return
       setSumMode(false)
       setDay(d)
-      replaceHash({ event: eventId, day: d, sumMode: false })
+      replaceHash({ event: eventId, day: d, sumMode: false, grp: activeGrp })
     },
-    [sumMode, day],
+    [sumMode, day, activeGrp],
   )
 
   const selectSum = useCallback(() => {
     if (sumMode) return
     setSumMode(true)
-    replaceHash({ event: eventId, day, sumMode: true })
-  }, [sumMode, day])
+    replaceHash({ event: eventId, day, sumMode: true, grp: activeGrp })
+  }, [sumMode, day, activeGrp])
 
   const selectGroup = useCallback(
     (grp: string) => {
       setActiveGrp(grp)
       activeGrpRef.current = grp
+      replaceHash({ event: eventId, day, sumMode, grp })
       void switchGroup(grp)
     },
-    [switchGroup],
+    [switchGroup, day, sumMode],
   )
 
   // --- Метарядок під заголовком ---
@@ -105,11 +121,16 @@ export function App() {
         <div className="empty-sub">{state.error}</div>
       </div>
     )
-  } else if (state.loading && !state.results.length && !state.allResults.length) {
+  } else if (state.loading) {
+    // state.loading вмикається ЛИШЕ для «навігаційних» завантажень
+    // (перше відкриття, зміна дня/режиму/групи). Фоновий polling/realtime
+    // оновлює дані тихо, без спінера. Тож показуємо спінер на будь-яке
+    // навігаційне завантаження — інакше встигають блимнути старі дані
+    // попереднього дня/групи або помилковий «немає результатів».
     content = (
       <div className="empty">
         <span className="spin" aria-hidden="true" />
-        <div className="empty-title">Завантажуємо результати…</div>
+        <div className="empty-title">Завантаження…</div>
         <div className="empty-sub">Це займе кілька секунд</div>
       </div>
     )

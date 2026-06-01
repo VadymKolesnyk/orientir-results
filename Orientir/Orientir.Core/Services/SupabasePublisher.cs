@@ -57,11 +57,14 @@ public class SupabasePublisher
                         }).ToList(), ct);
                     _metaSent.Add(ev.Slug);
                     log?.Report($"[{Now()}] {ev.Slug}: змагання + {days.Count} дн. зареєстровано");
+                    // Лінки у hash-форматі фронту: {base}/#/{event}/{d1|d2|sum}.
+                    // (Старий ?event=&day= фронт ще читає як запасний варіант.)
+                    var baseUrl = _settings.PublicBaseUrl.TrimEnd('/');
                     foreach (var d in days)
-                        log?.Report($"    🔗 {_settings.PublicBaseUrl}?event={ev.Slug}&day={d.Day}");
-                    // Якщо ввімкнено залік («Сума») — окреме посилання на ?day=summ.
+                        log?.Report($"    🔗 {baseUrl}/#/{ev.Slug}/d{d.Day}");
+                    // Якщо ввімкнено залік («Сума») — окреме посилання на /sum.
                     if (ev.Standings)
-                        log?.Report($"    🔗 Сума: {_settings.PublicBaseUrl}?event={ev.Slug}&day=summ");
+                        log?.Report($"    🔗 Сума: {baseUrl}/#/{ev.Slug}/sum");
                 }
                 catch (Exception ex)
                 {

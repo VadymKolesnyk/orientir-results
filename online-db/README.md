@@ -5,17 +5,18 @@
 довільна кількість днів.
 
 ```
-[Publisher (.NET)]                 [Supabase]                  [GitHub Pages]
-сканує BasePath\D_1, D_2, …   REST→  events / event_days   ←читає  results.html
-кожні 10 сек, по змаганнях    upsert  groups / results              (глядачі)
-                                      + RLS + Realtime
+[Publisher — Orientir/ (.NET 9)]        [Supabase]                  [GitHub Pages]
+сканує BasePath\D_1, D_2, …       REST→  events / event_days   ←читає  web/ (React)
+кожні 10 сек, по змаганнях        upsert  groups / results              (глядачі)
+                                          + RLS + Realtime
 ```
 
-- **Запис** — локальний publisher (`service_role`-ключ, лише на твоєму ПК).
+- **Запис** — локальний publisher `Orientir/` (`service_role`-ключ, лише на твоєму ПК).
+  Консоль (`Orientir.Console`) або WPF (`Orientir.Desktop`) — обидва над спільним `Orientir.Core`.
 - **Читання** — браузер глядача (`anon`-ключ, лише SELECT завдяки RLS).
 - Глядач відкриває **пряме посилання** виду
-  `…/results.html?event=<id>&day=<n>` — їх друкує publisher при старті.
-- Один файл `results.html` обслуговує **всі** змагання — перегенерація не потрібна.
+  `…/orientir-results/#/<id>/d<n>` — їх друкує publisher при старті.
+- Один фронт `web/` обслуговує **всі** змагання — перегенерація не потрібна.
 
 ---
 
@@ -27,43 +28,24 @@
    ⚠️ Скрипт перестворює таблиці (drop+create) — не запускай повторно поверх
    даних, які треба зберегти.
 3. **Project Settings → API**, скопіюй:
-   - **Project URL** → у `results.html` і `appsettings.json`
-   - **anon public** → у `results.html` (публічний, безпечний)
-   - **service_role** → у `pusher/appsettings.json` (СЕКРЕТНИЙ!)
+   - **Project URL** → у налаштування publisher та (за потреби) у `web/.env.local`
+   - **anon public** → читає фронт `web/` (публічний, безпечний; є fallback у
+     `web/src/lib/supabase.ts`, перевизначення через `VITE_SUPABASE_*`)
+   - **service_role** → у налаштування publisher (СЕКРЕТНИЙ! зберігається локально в SQLite)
 4. (Опційно) **Database → Replication** → увімкни таблиці `results`, `groups`,
    `event_days` для миттєвого оновлення. Без цього сторінка оновлюється раз на 10 с.
 
 ---
 
-## 2. Publisher (читає DBF → Supabase)
+## 2. Publisher — `Orientir/` (читає DBF → Supabase)
 
-Не потребує VFP OLE DB провайдера — `.dbf` читаються напряму (`Dbf.cs`), .NET 9.
+Не потребує VFP OLE DB провайдера — `.dbf` читаються напряму (`Orientir.Core/Dbf.cs`), .NET 9.
+Налаштування (Supabase-ключі, інтервал, публічний URL, список змагань) вводяться **в самій
+апці** (консоль/WPF) і зберігаються в локальній SQLite-БД `orientir-settings.db`. Старий
+`appsettings.json` формату pusher імпортується автоматично один раз, якщо БД ще порожня.
 
-### Конфіг `pusher/appsettings.json`
-```json
-{
-  "SupabaseUrl": "https://ВАШ-ПРОЕКТ.supabase.co",
-  "ServiceRoleKey": "ВАШ-SERVICE-ROLE-КЛЮЧ",
-  "IntervalSeconds": 10,
-  "PublicBaseUrl": "https://ВАШ-ЛОГІН.github.io/ВАШ-РЕПО/online/results.html",
-  "Events": [
-    {
-      "Id": "kyiv2025",
-      "Title": "Kyiv City Race",
-      "Subtitle": "31.05–01.06.2025",
-      "BasePath": "D:\\orientir\\event\\kyiv_city_race_31_05-01_06_2025",
-      "Standings": true,
-      "ActiveDay": 1,
-      "Days": [
-        { "Day": 1, "Folder": "D_1", "Label": "30 травня" },
-        { "Day": 2, "Folder": "D_2", "Label": "31 травня" }
-      ]
-    }
-  ]
-}
-```
-
-- **`Id`** — slug у посиланні (`?event=kyiv2025`). Латиниця/цифри.
+### Параметри змагання
+- **`Id` / `Slug`** — slug у посиланні (`#/kyiv2025/d1`). Латиниця/цифри.
 - **`Days`** можна **не вказувати** — publisher сам знайде підтеки `D_1..D_n`
   з `OLD.DBF` (службову `d_0`, `flag`, `foto` пропускає; `Label` буде порожній).
 - **`Standings`** (необов'язкове, типово `false`) — `true` вмикає на сторінці колонку
@@ -74,23 +56,30 @@
   щотакту перечитує й шле в Supabase результати **лише цього дня** (метадані груп для всіх
   днів усе одно відправляються один раз). Прибери поле — і ллються всі дні (як раніше).
   Зручно в багатоденних: учора лили `ActiveDay: 1`, сьогодні ставиш `ActiveDay: 2`.
-- **Нове змагання** = ще один об'єкт у `Events`. Тестові теки (`test`, `_Copy`…)
+- **Нове змагання** = ще один запис у списку. Тестові теки (`test`, `_Copy`…)
   просто не додаєш — публікується лише те, що в списку.
 
 ### Запуск
 ```powershell
-cd pusher
-dotnet run -- --dry-run   # перевірка: що прочитається, без відправки
-dotnet run                # бойовий: шле в Supabase кожні 10 с
+cd Orientir
+dotnet run --project Orientir.Desktop   # основна апка (WPF, Windows)
+dotnet run --project Orientir.Console   # альтернативна консольна апка
 ```
-При старті в консолі друкуються **готові посилання** на кожен день:
+При старті друкуються **готові посилання** на кожен день (+ «Сума», якщо `Standings`):
 ```
 [12:00:01] kyiv2025: змагання + 2 дн. зареєстровано
-    🔗 https://…/online/results.html?event=kyiv2025&day=1
-    🔗 https://…/online/results.html?event=kyiv2025&day=2
+    🔗 https://…/orientir-results/#/kyiv2025/d1
+    🔗 https://…/orientir-results/#/kyiv2025/d2
+    🔗 Сума: https://…/orientir-results/#/kyiv2025/sum
 [12:00:02] kyiv2025 день 1: результатів 598 (фініш 526, біжать 25)
 ```
 Ці URL і розсилаєш глядачам — на кожен день своє посилання.
+
+> **Формат лінка.** Канонічний — hash: `…/orientir-results/#/{event}/{d1|d2|sum}`.
+> Hash обрано тому, що GitHub Pages віддає статику: прямий перехід на справжній шлях
+> `…/orientir-results/<id>/d1` дав би 404, а з hash F5 і прямі лінки працюють без
+> `404.html`. Старий query `?event=<id>&day=<n>` (зокрема `day=summ`) фронт ще читає
+> як запасний варіант — раніше роздані лінки не ламаються.
 
 ### Як мапляться поля OLD.DBF
 | Supabase        | OLD.DBF | Що це |
@@ -100,7 +89,7 @@ dotnet run                # бойовий: шле в Supabase кожні 10 с
 | `grp`           | GRUP    | група (Ч18, Ж21Е…) |
 | `full_name`     | FAM     | ПІБ |
 | `rk`            | M_1     | місце |
-| `team`          | KOM1    | область (як «Team» на бланку) |
+| `team`          | KOM1    | область (показується як «Регіон») |
 | `club`          | KOM2    | клуб |
 | `birth`         | GR      | дата народження |
 | `qual`          | KVAL    | розряд |
@@ -108,8 +97,8 @@ dotnet run                # бойовий: шле в Supabase кожні 10 с
 | `finish_time`   | F_1     | фініш |
 | `result_time`   | R_1     | час |
 
-**Статус** обчислюється (`Program.cs → ComputeStatus`) — спирається на явне
-поле зняття `U_DAL`, а **не** на «`M_1=0`»:
+**Статус** обчислюється (`Orientir.Core/Services/ResultsReader.cs → ComputeStatus`) —
+спирається на явне поле зняття `U_DAL`, а **не** на «`M_1=0`»:
 - `U_DAL` заповнене (MP / DNS / …) → `dsq` (причина показується, як «MP» на бланку)
 - фініш є + місце > 0 → `finished`
 - фініш є, місця ще нема (без зняття) → `finished_pending` (час є, місце рахується)
@@ -129,23 +118,34 @@ dotnet run                # бойовий: шле в Supabase кожні 10 с
 
 ---
 
-## 3. Фронтенд на GitHub Pages
+## 3. Фронтенд `web/` на GitHub Pages
 
-1. У `results.html` впиши `SUPABASE_URL` та `SUPABASE_ANON_KEY`.
-2. Поклади теку `online/` у GitHub-репозиторій.
-3. **Settings → Pages** → Source: гілка `main`.
-4. Базова адреса: `https://<логін>.github.io/<репо>/online/results.html`
-   (саме її вкажи у `PublicBaseUrl` конфігу publisher).
-5. Глядач відкриває `…/results.html?event=<id>&day=<n>`. Сторінка:
+Фронт — **React + Vite + TypeScript + Tailwind** (`web/`). Деплоїться автоматично через
+`.github/workflows/deploy-pages.yml` при кожному пуші в `master` (офіційний artifact-флоу
+Pages, без гілки `gh-pages`).
+
+1. Supabase-ключі фронт бере з env (`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`),
+   із публічним fallback у `web/src/lib/supabase.ts`. Перевизначити — через `web/.env.local`
+   або repo-variables в Actions.
+2. **Одноразове налаштування** після першого мерджу: у репо → **Settings → Pages →
+   Source = GitHub Actions**.
+3. Vite `base` = `/orientir-results/` (ім'я репо), тож сайт буде на
+   `https://<логін>.github.io/orientir-results/` — саме цей base вказуєш у publisher
+   (поле **«Публічний URL»**).
+4. Глядач відкриває `…/orientir-results/#/<id>/d<n>` (або `/sum`). Сторінка:
    - у шапці — назва змагання (`title`) і підзаголовок (`subtitle`);
    - перемикач днів будується автоматично з `event_days` (підписи «День 1 ·
-     30 травня»), перемикання оновлює URL — посилання на день можна копіювати;
-   - вкладки груп, шапка групи, таблиця (Місце · ПІБ · № · Команда · Старт · Час),
-     пошук і live-оновлення.
-   - Без `?event=` сторінка просить додати параметр.
+     30 травня»), перемикання оновлює hash — посилання на день можна копіювати;
+   - вкладки груп, шапка групи, таблиця (Місце · ПІБ · № · Регіон · Клуб · Старт · Час),
+     пошук і live-оновлення (Realtime + опитування раз на 10 с) з авто-офлайном.
+   - Без `#/<id>/…` сторінка просить додати маршрут.
+
+> `online/results.html` — **застарілий** односторінковий фронт (vanilla JS + Supabase CDN),
+> з якого `web/` портовано 1:1. Лишається як референс/бекап; **джерелом Pages більше не є.**
+> При зміні глядацької поведінки редагуй `web/`, а не `online/results.html`.
 
 ---
 
 ## Безпека
-- `service_role`-ключ — **тільки** в локальному `appsettings.json` (у `.gitignore`).
+- `service_role`-ключ — **тільки** локально в SQLite-БД publisher (`*.db` у `.gitignore`).
 - На GitHub іде лише `anon`-ключ; RLS дозволяє з нього виключно читання.

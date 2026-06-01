@@ -1,6 +1,3 @@
-# Секрети publisher — НЕ викладати (містить service_role-ключ)!
-pusher/appsettings.json
-
 # .NET build
 **/bin/
 **/obj/
