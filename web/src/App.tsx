@@ -218,6 +218,16 @@ export function App() {
         <div className="empty-sub">Це займе кілька секунд</div>
       </div>
     )
+  } else if (names.length === 0) {
+    // Змагання відкрите, але груп ще немає — результати ще не публікували.
+    content = (
+      <div className="empty">
+        <div className="empty-title">Результати ще не опубліковано</div>
+        <div className="empty-sub">
+          Вони з’являться тут пізніше, щойно почнуться змагання
+        </div>
+      </div>
+    )
   } else if (favView && sumMode) {
     // Обрані + «Сума»: залік за всі дні для обраних (agg по bib, з усіх груп).
     content = (
