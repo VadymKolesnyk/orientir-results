@@ -157,12 +157,16 @@ export function useLiveResults(args: Args) {
     [],
   )
 
-  const load = useCallback(async () => {
+  // showLoading=true піднімає спінер на час запиту — для «навігаційних»
+  // перезапитів (перше завантаження, зміна дня/режиму). Фоновий polling/realtime
+  // викликає load() без прапорця, щоб не блимати поверх уже показаних даних.
+  const load = useCallback(async (showLoading = false) => {
     const { eventId, day, sumMode } = argsRef.current
     if (!eventId) {
       setState((s) => ({ ...s, loading: false, error: 'no-event' }))
       return
     }
+    if (showLoading) setState((s) => (s.loading ? s : { ...s, loading: true }))
 
     // Легкі метадані: групи дня, саме змагання, дні.
     const [rGrp, rEv, rDays] = await Promise.all([
@@ -223,6 +227,9 @@ export function useLiveResults(args: Args) {
   const switchGroup = useCallback(
     async (grp: string) => {
       const { eventId, sumMode, day } = argsRef.current
+      // Спінер на час дотягування нової групи — інакше між кліком і відповіддю
+      // показувалися б старі/порожні дані (й помилковий empty-стан).
+      setState((s) => (s.loading ? s : { ...s, loading: true }))
       if (sumMode) {
         const r = await sb
           .from('results')
@@ -234,10 +241,11 @@ export function useLiveResults(args: Args) {
           ...s,
           allResults,
           results: allResults.filter((x) => x.day === day),
+          loading: false,
         }))
       } else {
         const results = await fetchGroup(grp)
-        setState((s) => ({ ...s, results }))
+        setState((s) => ({ ...s, results, loading: false }))
       }
     },
     [fetchGroup],
@@ -245,7 +253,7 @@ export function useLiveResults(args: Args) {
 
   // Перше завантаження + старт live. Перезавантаження при зміні дня/режиму.
   useEffect(() => {
-    void load()
+    void load(true)
     startLive()
     return () => {
       if (pollTimerRef.current) {
@@ -260,9 +268,9 @@ export function useLiveResults(args: Args) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Зміна дня або режиму «Сума» → дотягуємо відповідні дані.
+  // Зміна дня або режиму «Сума» → дотягуємо відповідні дані (зі спінером).
   useEffect(() => {
-    void load()
+    void load(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day, sumMode])
 

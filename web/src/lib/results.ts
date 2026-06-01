@@ -38,10 +38,10 @@ export function dayLabel(d: EventDay): string {
   return d.label ? `День ${d.day} · ${d.label}` : `День ${d.day}`
 }
 
-// Короткий підпис дня (вузькі екрани): «Д1». Мітку дня (label) опускаємо —
-// вона надто довга для маленької кнопки, лишаємо тільки номер.
+// Короткий підпис дня (вузькі екрани): «День 1». Мітку дня (label) опускаємо —
+// вона надто довга для маленької кнопки, лишаємо тільки «День N».
 export function dayLabelShort(d: EventDay): string {
-  return `Д${d.day}`
+  return `День ${d.day}`
 }
 
 // Фільтр пошуку: ПІБ / команда / клуб / номер (lowercase substring).

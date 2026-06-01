@@ -34,8 +34,7 @@ export function DayBar({
       ))}
       {event?.standings && (
         <button className={sumMode ? 'on' : ''} onClick={onSelectSum}>
-          <span className="lbl-full">Σ Сума</span>
-          <span className="lbl-short">Σ</span>
+          Сума
         </button>
       )}
     </div>
