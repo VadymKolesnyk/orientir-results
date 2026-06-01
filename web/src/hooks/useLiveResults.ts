@@ -9,7 +9,7 @@ import type { EventRow, EventDay, GroupRow, ResultRow } from '../types'
 // поспіль — вважаємо змагання завершеним, спиняємо polling+realtime.
 // Поновлення — лише перезавантаженням сторінки (F5).
 const STALE_LIMIT = 4 // скільки опитувань поспіль без змін → офлайн
-const STALE_MS = 30 * 60 * 1000 // остання зміна давніша за пів години → офлайн одразу
+const STALE_MS = 5 * 60 * 1000 // остання зміна давніша за 5 хв → офлайн одразу
 const POLL_MS = 10000
 
 interface Args {
@@ -89,17 +89,19 @@ export function useLiveResults(args: Args) {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'results' },
           () => {
-            if (!offlineRef.current) void load()
+            // Фоновий апдейт — лише results, без перезапиту метаданих.
+            if (!offlineRef.current) void loadResults()
           },
         )
         .subscribe()
     }
     if (!pollTimerRef.current) {
       pollTimerRef.current = setInterval(() => {
-        if (!offlineRef.current) void load()
+        // Фоновий polling — лише results, без перезапиту метаданих.
+        if (!offlineRef.current) void loadResults()
       }, POLL_MS)
     }
-    // load визначено нижче — стабільне завдяки useCallback із порожніми deps.
+    // loadResults визначено нижче — стабільне завдяки useCallback.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -170,7 +172,7 @@ export function useLiveResults(args: Args) {
 
     // Легкі метадані: групи дня, саме змагання, дні.
     const [rGrp, rEv, rDays] = await Promise.all([
-      sb.from('groups').select(GRP_COLS).eq('event', eventId).eq('day', day).order('ord'),
+      sb.from('groups').select(GRP_COLS).eq('event', eventId).eq('day', day),
       sb.from('events').select('id,title,subtitle,standings').eq('id', eventId).maybeSingle(),
       sb.from('event_days').select('day,label,ord').eq('event', eventId).order('ord'),
     ])
@@ -221,6 +223,40 @@ export function useLiveResults(args: Args) {
       loading: false,
       error: null,
     })
+  }, [checkStale, fetchGroup])
+
+  // Фонове оновлення (polling/realtime): тягнемо ЛИШЕ results активної групи.
+  // Метадані (event/eventDays/groups) не чіпаємо — у межах дня вони не
+  // змінюються, а активну групу беремо з уже узгодженого state (через ref),
+  // без повторного запиту до groups. Спінер не піднімаємо — це тихий sync.
+  const loadResults = useCallback(async () => {
+    const { eventId, day, sumMode, activeGrp } = argsRef.current
+    if (!eventId) return
+    // standings-режим уже узгоджено попереднім load(); тут просто слухаємось state.
+    const effSum = sumMode
+    const grp = activeGrp
+
+    let allResults: ResultRow[] = []
+    let results: ResultRow[] = []
+    if (effSum) {
+      const rAll = await sb
+        .from('results')
+        .select(RES_COLS)
+        .eq('event', eventId)
+        .eq('grp', grp)
+      allResults = rAll.error ? [] : ((rAll.data as ResultRow[]) || [])
+      results = allResults.filter((r) => r.day === day)
+    } else {
+      results = grp ? await fetchGroup(grp) : []
+    }
+
+    checkStale(allResults, results)
+    setState((s) => ({
+      ...s,
+      results,
+      allResults,
+      offline: offlineRef.current,
+    }))
   }, [checkStale, fetchGroup])
 
   // Перемикання групи: дотягуємо результати лише цієї групи, потім рендеримо.

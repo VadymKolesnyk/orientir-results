@@ -9,6 +9,10 @@
     <RootNamespace>Orientir.Desktop</RootNamespace>
     <AssemblyName>Orientir.Desktop</AssemblyName>
 
+    <!-- Іконка exe (Explorer/таскбар). Та сама, що й фавікон веб-результатів
+         (web/public/favicon.svg) — КП-прапорець. Генерується make_icon.py. -->
+    <ApplicationIcon>app.ico</ApplicationIcon>
+
     <!-- Цільова платформа для self-contained публікації (один exe без .NET).
          RuntimeIdentifiers (множина) НЕ форсує RID при build/run, тож звичайний
          `dotnet build`/`dotnet run` лишається швидким. RID задаємо в команді publish. -->
@@ -26,6 +30,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Orientir.Core\Orientir.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Та сама іконка як Resource — для Icon у вікнах (title bar). -->
+  <ItemGroup>
+    <Resource Include="app.ico" />
   </ItemGroup>
 
 </Project>

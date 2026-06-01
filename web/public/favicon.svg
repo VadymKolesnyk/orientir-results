@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Orientir — онлайн результати">
+  <!-- Орієнтувальний КП-прапорець (біло-помаранчевий) на фірмовому індиго.
+       Спільна іконка для веб-результатів і десктоп-додатка. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3d42c8"/>
+      <stop offset="1" stop-color="#222a92"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Підкладка -->
+  <rect x="0" y="0" width="64" height="64" rx="14" fill="url(#bg)"/>
+
+  <!-- Стійка прапорця -->
+  <rect x="20" y="16" width="3.4" height="34" rx="1.7" fill="#eef0fb"/>
+
+  <!-- КП-прапорець: квадрат, поділений діагоналлю на білий і помаранчевий -->
+  <g>
+    <path d="M23.4 16 H44 V36 H23.4 Z" fill="#ffffff"/>
+    <path d="M44 16 V36 H23.4 Z" fill="#ee7b2e"/>
+    <path d="M23.4 16 H44 V36 H23.4 Z" fill="none" stroke="#ffffff" stroke-width="1.2"/>
+  </g>
+
+  <!-- Підставка/земля -->
+  <circle cx="21.7" cy="50" r="4.2" fill="#ee7b2e"/>
+</svg>

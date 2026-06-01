@@ -24,7 +24,8 @@ export const STATUS_ORDER: Record<string, number> = {
 // щоб зменшити трафік. Пропущені: finish_time, region, birth, qual.
 export const RES_COLS =
   'bib,grp,day,rk,full_name,team,club,status,reason,start_time,result_time,result_seconds,points,updated_at';
-export const GRP_COLS = 'name,controls,distance_km,ord';
+// ord не тягнемо: вкладки груп сортуються за алфавітом (groupNames), не за ord.
+export const GRP_COLS = 'name,controls,distance_km';
 
 export interface EventRow {
   id: string;
@@ -43,7 +44,6 @@ export interface GroupRow {
   name: string;
   controls: number | null;
   distance_km: number | null;
-  ord: number | null;
 }
 
 export interface ResultRow {
