@@ -124,9 +124,11 @@ const GRP_COLS  = 'name,controls,distance_km,ord';
 
 const params = new URLSearchParams(location.search);
 const eventId = params.get('event') || '';   // ?event=kyiv2025
-let day = Number(params.get('day')) || 1;     // ?day=1
+const dayParam = (params.get('day') || '').toLowerCase();  // ?day=1 або ?day=summ
+// «Сума» (залік за всі дні) задається як ?day=summ. Інакше day — номер дня.
+let sumMode = dayParam === 'summ';
+let day = sumMode ? 1 : (Number(dayParam) || 1);
 let activeGrp = '';      // '' = перша група за порядком
-let sumMode = params.get('sum') === '1';       // ?sum=1 — одразу відкрити залік
 let results = [], groups = [], event = null, eventDays = [];
 let allResults = [];     // результати ВСІХ днів (для режиму «Сума»)
 
@@ -238,7 +240,9 @@ function renderDays(){
   if (sumBtn) sumBtn.onclick = () => {
     if (sumMode) return;
     sumMode = true;
-    const u = new URL(location); u.searchParams.set('sum', '1'); history.replaceState(null, '', u);
+    // «Сума» в URL — як окремий «день»: ?day=summ.
+    const u = new URL(location); u.searchParams.set('day', 'summ'); u.searchParams.delete('sum');
+    history.replaceState(null, '', u);
     load();   // режим суми → дотягуємо всі дні активної групи
   };
 }

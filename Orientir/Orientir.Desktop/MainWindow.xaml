@@ -1,0 +1,160 @@
+<Window x:Class="Orientir.Desktop.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Orientir — Publisher" Height="640" Width="900"
+        WindowStartupLocation="CenterScreen" FontSize="13">
+    <TabControl Margin="8">
+
+        <!-- 1. Налаштування Supabase -->
+        <TabItem Header="Налаштування">
+            <Grid Margin="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="180" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Supabase URL" VerticalAlignment="Center" Margin="0,6" />
+                <TextBox   Grid.Row="0" Grid.Column="1" x:Name="TxtUrl" Margin="0,6"
+                           IsReadOnly="True" Background="#F3F3F3" />
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Service Role Key" VerticalAlignment="Center" Margin="0,6" />
+                <TextBox   Grid.Row="1" Grid.Column="1" x:Name="TxtKey" Margin="0,6"
+                           IsReadOnly="True" Background="#F3F3F3" />
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Інтервал (секунд)" VerticalAlignment="Center" Margin="0,6" />
+                <TextBox   Grid.Row="2" Grid.Column="1" x:Name="TxtInterval" Width="120" HorizontalAlignment="Left" Margin="0,6"
+                           IsReadOnly="True" Background="#F3F3F3" />
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Публічний URL" VerticalAlignment="Center" Margin="0,6" />
+                <TextBox   Grid.Row="3" Grid.Column="1" x:Name="TxtPublicUrl" Margin="0,6"
+                           IsReadOnly="True" Background="#F3F3F3" />
+
+                <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Margin="0,12">
+                    <Button x:Name="BtnEditSettings" Content="Редагувати" Width="120" Margin="0,0,8,0"
+                            Click="EditSettings_Click" />
+                    <Button x:Name="BtnSaveSettings" Content="Зберегти" Width="120" Margin="0,0,8,0"
+                            Visibility="Collapsed" Click="SaveSettings_Click" />
+                    <Button x:Name="BtnCancelSettings" Content="Скасувати" Width="120"
+                            Visibility="Collapsed" Click="CancelSettings_Click" />
+                </StackPanel>
+            </Grid>
+        </TabItem>
+
+        <!-- 2. Змагання -->
+        <TabItem Header="Змагання">
+            <Grid Margin="16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <DataGrid Grid.Row="0" x:Name="GridEvents" AutoGenerateColumns="False"
+                          CanUserAddRows="False" SelectionMode="Single"
+                          SelectionChanged="GridEvents_SelectionChanged"
+                          CellEditEnding="GridEvents_CellEditEnding">
+                    <DataGrid.Columns>
+                        <DataGridCheckBoxColumn Header="Активне" Binding="{Binding IsActive, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="65" />
+                        <DataGridTextColumn Header="Slug"   Binding="{Binding Slug}"   Width="150" IsReadOnly="True" />
+                        <DataGridTextColumn Header="Назва"  Binding="{Binding Title}"  Width="180" IsReadOnly="True" />
+                        <DataGridTextColumn Header="Шлях"   Binding="{Binding BasePath}" Width="*" IsReadOnly="True" />
+                        <DataGridCheckBoxColumn Header="Бали" Binding="{Binding Standings}" Width="45" IsReadOnly="True" />
+                        <DataGridTextColumn Header="Акт.день" Binding="{Binding ActiveDay}" Width="65" IsReadOnly="True" />
+                        <DataGridTextColumn Header="Днів"   Binding="{Binding Days.Count}" Width="45" IsReadOnly="True" />
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <!-- Редактор обраного змагання -->
+                <GroupBox Grid.Row="1" Header="Редагування" Margin="0,12,0,0">
+                    <Grid Margin="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="130" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Slug" VerticalAlignment="Center" Margin="0,4" />
+                        <TextBox   Grid.Row="0" Grid.Column="1" x:Name="TxtEvSlug" Margin="0,4" />
+
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Назва" VerticalAlignment="Center" Margin="0,4" />
+                        <TextBox   Grid.Row="1" Grid.Column="1" x:Name="TxtEvTitle" Margin="0,4" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Підзаголовок" VerticalAlignment="Center" Margin="0,4" />
+                        <TextBox   Grid.Row="2" Grid.Column="1" x:Name="TxtEvSubtitle" Margin="0,4" />
+
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Шлях до теки" VerticalAlignment="Center" Margin="0,4" />
+                        <TextBox   Grid.Row="3" Grid.Column="1" x:Name="TxtEvBasePath" Margin="0,4" />
+                        <Button    Grid.Row="3" Grid.Column="2" Content="Огляд…" Margin="6,4,0,4" Click="BrowseBasePath_Click" />
+
+                        <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Margin="0,4">
+                            <CheckBox x:Name="ChkStandings" Content="Рахувати бали" VerticalAlignment="Center" />
+                            <TextBlock Text="Активний день:" Margin="20,0,6,0" VerticalAlignment="Center" />
+                            <TextBox x:Name="TxtEvActiveDay" Width="60" VerticalAlignment="Center" />
+                            <TextBlock Text="(порожньо = усі)" Margin="6,0,0,0" Foreground="Gray" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Grid>
+                </GroupBox>
+
+                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,10,0,0">
+                    <Button Content="Нове"      Width="90" Margin="0,0,8,0" Click="NewEvent_Click" />
+                    <Button Content="Зберегти"  Width="90" Margin="0,0,8,0" Click="SaveEvent_Click" />
+                    <Button Content="Видалити"  Width="90" Margin="0,0,8,0" Click="DeleteEvent_Click" />
+                    <Button Content="Дні…"      Width="90" Click="EditDays_Click" />
+                </StackPanel>
+            </Grid>
+        </TabItem>
+
+        <!-- 3. Публікація -->
+        <TabItem Header="Публікація">
+            <Grid Margin="16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                    <Button x:Name="BtnStart" Content="▶ Старт" Width="120" Margin="0,0,8,0" Click="Start_Click" />
+                    <Button x:Name="BtnStop"  Content="■ Стоп"  Width="120" Margin="0,0,8,0" IsEnabled="False" Click="Stop_Click" />
+                    <TextBlock x:Name="LblStatus" Text="Зупинено" VerticalAlignment="Center"
+                               Margin="12,0,0,0" FontWeight="Bold" />
+                </StackPanel>
+                <RichTextBox Grid.Row="1" x:Name="LogBox" FontFamily="Consolas" FontSize="12"
+                             IsReadOnly="True" VerticalScrollBarVisibility="Auto"
+                             IsDocumentEnabled="True" />
+            </Grid>
+        </TabItem>
+
+        <!-- 4. HTML -->
+        <TabItem Header="HTML-звіти">
+            <Grid Margin="16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,10"
+                           Text="Конвертація старих cp1251 .htm звітів у сучасний UTF-8 .html. Оберіть файли або теку." />
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+                    <Button Content="Обрати файли…" Width="140" Margin="0,0,8,0" Click="PickHtmlFiles_Click" />
+                    <Button Content="Обрати теку…"  Width="140" Click="PickHtmlFolder_Click" />
+                </StackPanel>
+                <ListBox Grid.Row="2" x:Name="LstHtmlLog" FontFamily="Consolas" FontSize="12" />
+            </Grid>
+        </TabItem>
+
+    </TabControl>
+</Window>

@@ -1,0 +1,11 @@
+bin/
+obj/
+
+# Локальна БД налаштувань (містить ключі Supabase)
+*.db
+*.db-shm
+*.db-wal
+orientir-settings.db
+
+# Старий конфіг (секрети)
+appsettings.json
