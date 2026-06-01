@@ -30,7 +30,7 @@ export function SummaryTable({
   const q = query.trim().toLowerCase()
   const days = summaryDays(eventDays, allResults, day)
 
-  let people = aggregateSummary(allResults, activeGrp)
+  let people = aggregateSummary(allResults)
   if (q) people = people.filter((p) => matchesPersonQuery(p, q))
 
   if (!people.length) {

@@ -15,7 +15,7 @@ export function UpdatedFooter({ results, offline }: Props) {
     const at = last
       ? ' · останнє: ' + new Date(last).toLocaleTimeString('uk-UA')
       : ''
-    text = `Офлайн — оновіть сторінку (F5), щоб перепідключитись${at}`
+    text = `Офлайн — натисніть «офлайн · оновити» вгорі, щоб перепідключитись${at}`
   } else {
     text = last
       ? 'Оновлено: ' + new Date(last).toLocaleTimeString('uk-UA')

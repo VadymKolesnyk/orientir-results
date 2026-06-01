@@ -2,8 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { sb } from '../lib/supabase'
 import { groupNames } from '../lib/results'
-import { RES_COLS, GRP_COLS } from '../types'
-import type { EventRow, EventDay, GroupRow, ResultRow } from '../types'
+import { RES_COLS, SYNC_COLS, GRP_COLS } from '../types'
+import type {
+  EventRow,
+  EventDay,
+  GroupRow,
+  ResultRow,
+  SyncRow,
+} from '../types'
 
 // Авто-офлайн: якщо час останньої синхронізації не змінюється N опитувань
 // поспіль — вважаємо змагання завершеним, спиняємо polling+realtime.
@@ -56,6 +62,15 @@ export function useLiveResults(args: Args) {
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const channelRef = useRef<RealtimeChannel | null>(null)
 
+  // Дзеркало вже завантажених рядків — щоб фоновий syncResults міг накласти
+  // лише змінні поля на наявні (full_name/team/club/start_time лишаються).
+  // У sum-режимі повний набір — allResults (усі дні), інакше — results.
+  const rowsRef = useRef<{ results: ResultRow[]; allResults: ResultRow[] }>({
+    results: [],
+    allResults: [],
+  })
+  rowsRef.current = { results: state.results, allResults: state.allResults }
+
   // Останні значення керуючих параметрів — щоб таймер/realtime читали свіже.
   const argsRef = useRef({ eventId, day, sumMode, activeGrp })
   argsRef.current = { eventId, day, sumMode, activeGrp }
@@ -89,19 +104,19 @@ export function useLiveResults(args: Args) {
           'postgres_changes',
           { event: '*', schema: 'public', table: 'results' },
           () => {
-            // Фоновий апдейт — лише results, без перезапиту метаданих.
-            if (!offlineRef.current) void loadResults()
+            // Фоновий апдейт — лише змінні поля (merge), без метаданих.
+            if (!offlineRef.current) void syncResults()
           },
         )
         .subscribe()
     }
     if (!pollTimerRef.current) {
       pollTimerRef.current = setInterval(() => {
-        // Фоновий polling — лише results, без перезапиту метаданих.
-        if (!offlineRef.current) void loadResults()
+        // Фоновий polling — лише змінні поля (merge), без метаданих.
+        if (!offlineRef.current) void syncResults()
       }, POLL_MS)
     }
-    // loadResults визначено нижче — стабільне завдяки useCallback.
+    // syncResults визначено нижче — стабільне завдяки useCallback.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -225,30 +240,60 @@ export function useLiveResults(args: Args) {
     })
   }, [checkStale, fetchGroup])
 
-  // Фонове оновлення (polling/realtime): тягнемо ЛИШЕ results активної групи.
-  // Метадані (event/eventDays/groups) не чіпаємо — у межах дня вони не
-  // змінюються, а активну групу беремо з уже узгодженого state (через ref),
-  // без повторного запиту до groups. Спінер не піднімаємо — це тихий sync.
-  const loadResults = useCallback(async () => {
-    const { eventId, day, sumMode, activeGrp } = argsRef.current
-    if (!eventId) return
-    // standings-режим уже узгоджено попереднім load(); тут просто слухаємось state.
-    const effSum = sumMode
-    const grp = activeGrp
+  // Фонове оновлення (polling/realtime): тягнемо ЛИШЕ змінні поля (SYNC_COLS)
+  // активної групи й накладаємо їх на вже завантажені рядки — сталі поля
+  // (ПІБ/команда/клуб/час старту) не перезапитуємо. Метадані теж не чіпаємо.
+  // Нові учасники (bib, якого ще нема локально) приходять без сталих полів —
+  // для них робимо разовий повний дозапит (RES_COLS) лише по їхніх bib.
+  const syncResults = useCallback(async () => {
+    const { eventId, day, sumMode, activeGrp: grp } = argsRef.current
+    if (!eventId || !grp) return
 
-    let allResults: ResultRow[] = []
-    let results: ResultRow[] = []
-    if (effSum) {
-      const rAll = await sb
+    // 1) Тягнемо лише змінні поля. У sum-режимі — за всі дні, інакше — поточний.
+    let q = sb
+      .from('results')
+      .select(SYNC_COLS)
+      .eq('event', eventId)
+      .eq('grp', grp)
+    if (!sumMode) q = q.eq('day', day)
+    const rSync = await q
+    if (rSync.error) return // тихо: фоновий sync не показує помилок
+    const syncRows = (rSync.data as SyncRow[]) || []
+
+    // 2) Індекс наявних повних рядків за ключем (bib,day).
+    const prevFull = sumMode
+      ? rowsRef.current.allResults
+      : rowsRef.current.results
+    const key = (bib: number, d: number) => `${bib}|${d}`
+    const prevByKey = new Map(prevFull.map((r) => [key(r.bib, r.day), r]))
+
+    // 3) Накладаємо змінні поля на наявні; невідомі bib (нові) — у fallback.
+    const merged: ResultRow[] = []
+    const missing: SyncRow[] = []
+    for (const s of syncRows) {
+      const prev = prevByKey.get(key(s.bib, s.day))
+      if (prev) merged.push({ ...prev, ...s })
+      else missing.push(s)
+    }
+
+    // 4) Fallback: для нових учасників один повний запит саме по їхніх bib.
+    if (missing.length) {
+      const bibs = [...new Set(missing.map((m) => m.bib))]
+      let fq = sb
         .from('results')
         .select(RES_COLS)
         .eq('event', eventId)
         .eq('grp', grp)
-      allResults = rAll.error ? [] : ((rAll.data as ResultRow[]) || [])
-      results = allResults.filter((r) => r.day === day)
-    } else {
-      results = grp ? await fetchGroup(grp) : []
+        .in('bib', bibs)
+      if (!sumMode) fq = fq.eq('day', day)
+      const rFull = await fq
+      const fullRows = rFull.error ? [] : ((rFull.data as ResultRow[]) || [])
+      merged.push(...fullRows)
     }
+
+    // 5) Розкладаємо на results/allResults так само, як робив повний fetch.
+    const allResults = sumMode ? merged : []
+    const results = sumMode ? merged.filter((r) => r.day === day) : merged
 
     checkStale(allResults, results)
     setState((s) => ({
@@ -257,7 +302,7 @@ export function useLiveResults(args: Args) {
       allResults,
       offline: offlineRef.current,
     }))
-  }, [checkStale, fetchGroup])
+  }, [checkStale])
 
   // Перемикання групи: дотягуємо результати лише цієї групи, потім рендеримо.
   const switchGroup = useCallback(
@@ -287,6 +332,14 @@ export function useLiveResults(args: Args) {
     [fetchGroup],
   )
 
+  // Ручне перепідключення (клік по «офлайн»): вмикаємо live назад, скидаємо
+  // лічильники застою й ПОВНІСТЮ перезавантажуємо все (метадані + результати)
+  // зі спінером — як F5, але без перезавантаження сторінки.
+  const reconnect = useCallback(() => {
+    goBackOnline() // setOffline(false) + reset stale + startLive()
+    void load(true)
+  }, [goBackOnline, load])
+
   // Перше завантаження + старт live. Перезавантаження при зміні дня/режиму.
   useEffect(() => {
     void load(true)
@@ -310,5 +363,5 @@ export function useLiveResults(args: Args) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day, sumMode])
 
-  return { state, reload: load, switchGroup }
+  return { state, reload: load, switchGroup, reconnect }
 }

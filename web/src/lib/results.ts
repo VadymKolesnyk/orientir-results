@@ -111,13 +111,11 @@ export function compareSummary(
   return (a.name || '').localeCompare(b.name || '', 'uk')
 }
 
-export function aggregateSummary(
-  allResults: ResultRow[],
-  activeGrp: string,
-): SummaryPerson[] {
+// allResults уже містить лише активну групу (запит у sum-режимі фіксує grp),
+// тож тут не фільтруємо за групою — просто агрегуємо по bib через усі дні.
+export function aggregateSummary(allResults: ResultRow[]): SummaryPerson[] {
   const m = new Map<number, SummaryPerson>()
   for (const r of allResults) {
-    if (r.grp !== activeGrp) continue
     if (!m.has(r.bib))
       m.set(r.bib, {
         bib: r.bib,

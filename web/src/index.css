@@ -33,6 +33,10 @@ h1 { margin: 0; font-size: 20px; }
 .dot { width: 8px; height: 8px; border-radius: 999px; background: #2f9e5c; animation: p 1.6s infinite; }
 .live.off { color: #9aa2b8; }
 .live.off .dot { background: #9aa2b8; animation: none; }
+/* В офлайні .live — це <button>: скидаємо рідну стилізацію, робимо клікабельним. */
+button.live { font: inherit; background: none; border: 0; padding: 4px 8px; margin: -4px -8px; border-radius: 8px; cursor: pointer; }
+button.live:hover { color: #5d6780; background: #eef0fb; }
+button.live:hover .dot { background: #5d6780; }
 @keyframes p {
   0%   { box-shadow: 0 0 0 0 rgba(47,158,92,.5); }
   70%  { box-shadow: 0 0 0 9px rgba(47,158,92,0); }

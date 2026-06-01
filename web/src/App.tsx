@@ -56,7 +56,7 @@ export function App() {
   // Залік доступний лише коли увімкнено standings — інакше скидаємо режим.
   const onStandingsOff = useCallback(() => setSumMode(false), [])
 
-  const { state, switchGroup } = useLiveResults({
+  const { state, switchGroup, reconnect } = useLiveResults({
     eventId,
     day,
     sumMode,
@@ -163,6 +163,7 @@ export function App() {
           event={state.event}
           meta={eventId ? meta : 'Завантаження…'}
           offline={state.offline}
+          onReconnect={reconnect}
         />
 
         <div className="bar">

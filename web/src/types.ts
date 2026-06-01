@@ -22,8 +22,33 @@ export const STATUS_ORDER: Record<string, number> = {
 
 // Тягнемо лише ті колонки, що реально показує/використовує сторінка (не *),
 // щоб зменшити трафік. Пропущені: finish_time, region, birth, qual.
+// grp не тягнемо: кожен запит до results фіксує .eq('grp', …), тож значення
+// в усіх рядках однакове й відоме заздалегідь. day лишаємо — у режимі «Сума»
+// тягнемо групу за ВСІ дні й розрізняємо рядки саме за day.
 export const RES_COLS =
-  'bib,grp,day,rk,full_name,team,club,status,reason,start_time,result_time,result_seconds,points,updated_at';
+  'bib,day,rk,full_name,team,club,status,reason,start_time,result_time,result_seconds,points,updated_at';
+
+// Фоновий sync (polling/realtime) тягне ЛИШЕ ці колонки: ключ (bib,day) +
+// поля, що реально змінюються під час перегонів. Решта (full_name, team, club,
+// start_time) під час змагання стабільна — її лишаємо з уже завантаженого рядка.
+// Нові учасники (невідомий bib) не мають цих сталих полів — тоді робимо
+// разовий повний дозапит (див. useLiveResults.syncResults).
+export const SYNC_COLS =
+  'bib,day,rk,status,reason,result_time,result_seconds,points,updated_at';
+// Підмножина мутабельних полів, що накладаємо на наявний рядок при merge.
+export type SyncRow = Pick<
+  ResultRow,
+  | 'bib'
+  | 'day'
+  | 'rk'
+  | 'status'
+  | 'reason'
+  | 'result_time'
+  | 'result_seconds'
+  | 'points'
+  | 'updated_at'
+>;
+
 // ord не тягнемо: вкладки груп сортуються за алфавітом (groupNames), не за ord.
 export const GRP_COLS = 'name,controls,distance_km';
 
@@ -48,7 +73,6 @@ export interface GroupRow {
 
 export interface ResultRow {
   bib: number;
-  grp: string;
   day: number;
   rk: number | null;
   full_name: string | null;

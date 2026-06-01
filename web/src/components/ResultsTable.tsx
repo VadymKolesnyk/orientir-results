@@ -70,8 +70,8 @@ export function ResultsTable({
   showPts,
 }: Props) {
   const q = query.trim().toLowerCase()
-  let list = results.filter((r) => r.grp === activeGrp)
-  if (q) list = list.filter((r) => matchesQuery(r, q))
+  // results уже містить лише активну групу (запит фіксує grp), тож не фільтруємо.
+  let list = q ? results.filter((r) => matchesQuery(r, q)) : results
 
   if (!list.length) {
     const msg = q
