@@ -21,7 +21,9 @@ create table public.events (
   title       text not null,           -- "Kyiv City Race"
   subtitle    text,                    -- "31.05–01.06.2025"
   days_count  int  not null default 1,
-  standings   boolean not null default false, -- вмикає бали + вкладку «Сума» на сторінці
+  standings   boolean not null default false, -- вмикає вкладку «Сума» (залік) на сторінці
+  points      boolean not null default false, -- показувати колонку «Бали»
+  display_config jsonb,                        -- конфіг колонок (які/порядок/великий-малий екран)
   updated_at  timestamptz not null default now()
 );
 
@@ -106,6 +108,8 @@ create policy "read results"    on public.results    for select to anon using (t
 --  колонки (бали + прапорець заліку) без drop:
 --    alter table public.results add column if not exists points numeric;
 --    alter table public.events  add column if not exists standings boolean not null default false;
+--    alter table public.events  add column if not exists points boolean not null default false;
+--    alter table public.events  add column if not exists display_config jsonb;
 -- ---------------------------------------------------------------------
 
 -- (Опційно) Realtime — миттєве оновлення сторінки:

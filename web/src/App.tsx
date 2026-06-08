@@ -8,6 +8,7 @@ import { parseRoute, replaceHash, buildHash } from './lib/route'
 import { Header } from './components/Header'
 import { DayBar } from './components/DayBar'
 import { SearchBox } from './components/SearchBox'
+import { ShowAllToggle } from './components/ShowAllToggle'
 import { GroupTabs } from './components/GroupTabs'
 import { ResultsTable } from './components/ResultsTable'
 import { SummaryTable } from './components/SummaryTable'
@@ -27,6 +28,8 @@ export function App() {
   // Якщо такої групи не виявиться серед доступних — onGroupsResolved відкине її.
   const [activeGrp, setActiveGrp] = useState(route.grp)
   const [query, setQuery] = useState('')
+  // «Всі колонки» на малому екрані (показати й приховані). Локальний UI-стан.
+  const [showAllCols, setShowAllCols] = useState(false)
 
   // Нещодавно відкриті змагання (для кореневої сторінки без event у URL).
   // Читаємо один раз при монтуванні — на цій сторінці список не змінюється.
@@ -163,7 +166,9 @@ export function App() {
       : `${sub}День ${day} · учасників: ${state.results.length}`
   }, [state.event, state.results.length, sumMode, day, favView])
 
-  const showPts = !!state.event?.standings
+  // Бали показуємо за прапорцем points; вкладка «Сума» — за standings (нижче).
+  const showPts = !!state.event?.points
+  const displayCfg = state.event?.display_config ?? null
 
   // --- Контент ---
   let content: React.ReactNode
@@ -274,6 +279,8 @@ export function App() {
         activeGrp={activeGrp}
         query={query}
         showPts={showPts}
+        cfg={displayCfg}
+        showAll={showAllCols}
         isFav={isFav}
         onToggleFav={toggleFav}
       />
@@ -300,6 +307,10 @@ export function App() {
             onSelectSum={selectSum}
           />
           <SearchBox value={query} onChange={setQuery} />
+          <ShowAllToggle
+            on={showAllCols}
+            onToggle={() => setShowAllCols((v) => !v)}
+          />
         </div>
 
         <GroupTabs names={names} activeGrp={activeGrp} onSelect={selectGroup} />

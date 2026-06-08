@@ -11,8 +11,20 @@ export function fmtPts(p: number | null | undefined): string {
   return n.toFixed(2)
 }
 
+// Відставання від лідера у форматі +M:SS (або +H:MM:SS). 0 → порожньо (сам лідер).
+export function fmtGap(deltaSec: number | null | undefined): string {
+  const n = Number(deltaSec)
+  if (!isFinite(n) || n <= 0) return ''
+  const h = Math.floor(n / 3600)
+  const m = Math.floor((n % 3600) / 60)
+  const s = Math.floor(n % 60)
+  const ss = String(s).padStart(2, '0')
+  if (h > 0) return `+${h}:${String(m).padStart(2, '0')}:${ss}`
+  return `+${m}:${ss}`
+}
+
 // Порядок у групі: фініш (за місцем/часом) → finished_pending (за часом) →
-// решта (за часом старту).
+// зняті (за результат-часом, потім за часом старту) → решта (за часом старту).
 export function cmp(a: ResultRow, b: ResultRow): number {
   const sa = STATUS_ORDER[a.status] ?? 9
   const sbb = STATUS_ORDER[b.status] ?? 9
@@ -23,6 +35,13 @@ export function cmp(a: ResultRow, b: ResultRow): number {
   }
   if (a.status === 'finished_pending') // ще без місця — за часом
     return (a.result_seconds ?? 1e9) - (b.result_seconds ?? 1e9)
+  if (a.status === 'dsq') {
+    // Зняті: спершу за результат-часом (без часу — в кінець), потім за стартом.
+    const ta = a.result_seconds ?? 1e9
+    const tb = b.result_seconds ?? 1e9
+    if (ta !== tb) return ta - tb
+    return (a.start_time || '').localeCompare(b.start_time || '')
+  }
   return (a.start_time || '').localeCompare(b.start_time || '')
 }
 

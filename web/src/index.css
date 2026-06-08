@@ -18,7 +18,7 @@ body {
   min-height: 100vh;
   padding: 22px 14px;
 }
-.wrap { max-width: 1100px; margin: 0 auto; }
+.wrap { max-width: 1500px; margin: 0 auto; }
 .card {
   padding: 20px;
   border: 1px solid rgba(48,52,155,.14);
@@ -54,6 +54,14 @@ input.q {
   margin-left: auto; padding: 8px 12px; border: 1px solid rgba(48,52,155,.22); border-radius: 10px;
   font-size: 14px; flex: 1 1 180px; max-width: 280px;
 }
+
+/* Перемикач «Всі колонки» — лише на малому екрані (вмикається у @media нижче). */
+.show-all-btn {
+  display: none; padding: 8px 12px; border: 1px solid rgba(48,52,155,.22);
+  border-radius: 10px; background: #fff; color: #30349b; font-size: 13px;
+  font-weight: 700; cursor: pointer; white-space: nowrap;
+}
+.show-all-btn.on { background: linear-gradient(135deg, #222a92, #3d42c8); color: #fff; border-color: transparent; }
 
 .tabs {
   display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; padding-bottom: 10px;
@@ -120,12 +128,20 @@ th { background: #e9ecf6; color: #3a3f63; font-size: 12px; font-weight: 700; }
 /* Заголовок «Місце»: повний / короткий («М») — за брейкпоінтами нижче. */
 .th-short { display: none; }
 .th-full { display: inline; }
-/* Клуб — лише на широких екранах (вмикається у min-width нижче). */
+/* Клуб — лише на широких екранах (вмикається у min-width нижче).
+ * Стосується таблиць «Сума»/«Обрані» зі сталим набором колонок. Для головної
+ * таблиці результатів (.cfg-table) видимість керується конфігом (hide-lg/hide-sm). */
 .col-club { display: none; }
+/* У головній таблиці легасі-дефолти не діють — там усе вирішує конфіг. */
+.cfg-table .col-club, .cfg-table .col-bib, .cfg-table .col-start { display: table-cell; }
+/* Конфігурована видимість колонок: великий екран = «не малий» (понад 600px). */
+.cfg-table .hide-lg { display: none; }
 tr:nth-child(even) td { background: #fafbff; }
 .rk { font-weight: 900; width: 46px; text-align: center; }
 .gold { color: #b8860b; } .silver { color: #7a7a8c; } .bronze { color: #a8682b; }
 .time { font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; }
+/* Час нефінішерів (зокрема знятих): показуємо, але звичайним шрифтом — це не залік. */
+.time-plain { font-variant-numeric: tabular-nums; font-weight: 400; white-space: nowrap; }
 .pts { font-variant-numeric: tabular-nums; font-weight: 800; text-align: right; white-space: nowrap; color: #222a92; }
 .pts.win { color: #2f9e5c; }
 .total { font-variant-numeric: tabular-nums; font-weight: 900; text-align: right; white-space: nowrap; color: #c0392b; }
@@ -169,13 +185,20 @@ thead th { position: sticky; top: 0; z-index: 1; }
   .col-club { display: table-cell; }
 }
 
-/* --- Мобільний (екран до 560px) --- */
-@media (max-width: 560px) {
+/* --- Мобільний / малий екран (до 600px) --- */
+@media (max-width: 600px) {
   body { padding: 12px 8px; }
   .card { padding: 14px; border-radius: 16px; }
   h1 { font-size: 17px; }
   /* На вузькому екрані ховаємо найменш важливі колонки: № і Старт. */
   .col-bib, .col-start { display: none; }
+  /* Головна таблиця: на малому екрані керує ЛИШЕ конфіг. Колонка видима за
+   * замовчуванням; hide-sm ховає її, hide-lg (приховане на великому) — показує. */
+  .cfg-table .col-bib, .cfg-table .col-start { display: table-cell; }
+  .cfg-table .hide-lg { display: table-cell; }
+  .cfg-table .hide-sm { display: none; }
+  /* «Всі колонки» драйвиться з React (sm := lg): колонки дістають коректні
+   * класи hide-lg/hide-sm, тож тут CSS-перевизначення не потрібне. */
   /* У «Сумі» на мобільному лишаємо тільки № + бали днів + сума: ховаємо регіон/місце/час. */
   .col-detail { display: none; }
   th, td { padding: 8px 8px; font-size: 13px; }
@@ -190,6 +213,7 @@ thead th { position: sticky; top: 0; z-index: 1; }
   .lbl-full { display: none; }
   .lbl-short { display: inline; }
   input.q { margin-left: 0; max-width: none; flex: 1 1 100%; }
+  .show-all-btn { display: inline-block; }
   .upd { text-align: left; }
 }
 

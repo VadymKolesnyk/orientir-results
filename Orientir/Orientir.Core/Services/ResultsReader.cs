@@ -59,8 +59,8 @@ public static class ResultsReader
 
             // Місце (M_1 з DBF) НЕ читаємо — рахуємо самі за часом нижче (AssignPlaces),
             // щоб результат з'являвся одразу після фінішу, не чекаючи оператора.
-            string status = ComputeStatus(start, finish, result, udal);
-            bool isFinished = status is "finished" or "finished_pending";
+            // «Зараз» — локальний час ПК публікатора (= місцевий час змагань).
+            string status = ComputeStatus(start, finish, result, udal, DateTime.Now.TimeOfDay);
 
             list.Add(new()
             {
@@ -79,9 +79,11 @@ public static class ResultsReader
                 ["reason"]         = status == "dsq" ? NullIfEmpty(udal) : null,
                 ["start_time"]     = NullIfEmpty(start),
                 ["finish_time"]    = NullIfEmpty(finish),
-                // Час показуємо для будь-якого фінішу (зокрема ще-не-розставленого місця).
-                ["result_time"]    = isFinished ? NullIfEmpty(result) : null,
-                ["result_seconds"] = isFinished ? TimeToSeconds(result) : null,
+                // Час показуємо для будь-кого, у кого він уже є в DBF — зокрема для
+                // знятих (DSQ). На місця/бали це не впливає: AssignPlaces/AssignPoints
+                // фільтрують за статусом, а не за наявністю часу.
+                ["result_time"]    = NullIfEmpty(result),
+                ["result_seconds"] = TimeToSeconds(result),
                 ["points"]         = (decimal?)null, // призначається в AssignPoints
                 ["status"]         = status,
                 ["updated_at"]     = DateTime.UtcNow.ToString("o"),
@@ -158,20 +160,33 @@ public static class ResultsReader
     //   U_DAL заповнене (MP/DNS/…)     → dsq (явна причина зняття)
     //   фініш + чистий час є           → finished (місце дорахує AssignPlaces)
     //   фініш є, але часу ще нема       → finished_pending (рідкісний проміжний стан)
-    //   старт є, фінішу нема            → running
-    //   інакше                         → dns
+    //   немає фінішу/результату:
+    //     S_1 (запланований старт) ще НЕ настав (start > now) → dns («не старт.»)
+    //     S_1 уже настав (start ≤ now)                        → running («на дистанції»)
+    //     S_1 порожнє                                         → dns
+    // S_1 — ЗАПЛАНОВАНИЙ час старту (відомий заздалегідь для всіх), тож саму
+    // наявність S_1 не можна вважати «вже біжить» — порівнюємо з now.
     // Місце (M_1) тут НЕ враховуємо — pusher рахує ранги сам у AssignPlaces.
-    public static string ComputeStatus(string start, string finish, string result, string udal)
+    public static string ComputeStatus(string start, string finish, string result, string udal, TimeSpan now)
     {
-        bool hasStart  = !string.IsNullOrWhiteSpace(start);
         bool hasFinish = !string.IsNullOrWhiteSpace(finish);
         bool hasResult = !string.IsNullOrWhiteSpace(result);
         bool removed   = !string.IsNullOrWhiteSpace(udal);
 
         if (removed) return "dsq";
         if (hasFinish) return hasResult ? "finished" : "finished_pending";
-        if (hasStart) return "running";
+
+        // Біжить лише той, чий запланований старт уже настав. Інакше — ще не стартував.
+        var startTod = ParseTimeOfDay(start);
+        if (startTod is TimeSpan s && s <= now) return "running";
         return "dns";
+    }
+
+    // "9:22" / "09:22:00" / "9:22:00.0" → TimeSpan доби; інакше null.
+    static TimeSpan? ParseTimeOfDay(string s)
+    {
+        int? sec = TimeToSeconds(s);
+        return sec is int n ? TimeSpan.FromSeconds(n) : null;
     }
 
     // ---------------------------------------------------------------------

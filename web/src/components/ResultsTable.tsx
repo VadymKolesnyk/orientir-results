@@ -1,6 +1,7 @@
-import { cmp, fmtPts, matchesQuery } from '../lib/results'
+import { cmp, fmtGap, fmtPts, matchesQuery } from '../lib/results'
 import { StarButton } from './StarButton'
-import type { GroupRow, ResultRow } from '../types'
+import { DEFAULT_DISPLAY_CONFIG } from '../types'
+import type { DisplayConfig, GroupRow, ResultRow } from '../types'
 
 const MEDAL = ['', 'gold', 'silver', 'bronze']
 
@@ -10,31 +11,50 @@ interface Props {
   activeGrp: string
   query: string
   showPts: boolean
+  cfg: DisplayConfig | null
+  showAll: boolean // «Всі колонки» (малий екран): показати й приховані
   isFav: (bib: number) => boolean
   onToggleFav: (bib: number) => void
 }
 
-// Час/місце залежно від статусу учасника (1:1 з rowHtml у results.html).
-function ResultRowView({
-  r,
-  showPts,
-  fav,
-  onToggleFav,
-}: {
-  r: ResultRow
-  showPts: boolean
-  fav: boolean
-  onToggleFav: (bib: number) => void
-}) {
-  let rk: React.ReactNode = ''
-  let time: React.ReactNode = ''
+// Опис колонки: заголовок (повний/короткий) + рендер клітинки. align — клас td.
+interface ColMeta {
+  header: { full: string; short?: string }
+  cls?: string // додатковий клас (напр. 'rk', 'pts')
+  cell: (ctx: CellCtx) => React.ReactNode
+}
 
-  if (r.status === 'finished') {
-    rk = <span className={MEDAL[r.rk ?? 0] || ''}>{r.rk || ''}</span>
-    time = <span className="time">{r.result_time || ''}</span>
-  } else if (r.status === 'finished_pending') {
-    // Фінішував, місце ще рахується — показуємо час, але без номера місця.
-    time = (
+interface CellCtx {
+  r: ResultRow
+  separateLg: boolean // розділяти час/DSQ на великому екрані
+  separateSm: boolean // те саме на малому екрані
+  winnerSec: number | null // найкращий час у групі (для відставання)
+}
+
+// Текст статусу нефінішера (running/dsq/dns) — спільний для обох колонок.
+function statusText(r: ResultRow): React.ReactNode {
+  if (r.status === 'running') return <span className="b-running">на дистанції</span>
+  if (r.status === 'dsq') return <span className="flag">{r.reason || 'зн.'}</span>
+  if (r.status === 'dns')
+    return (
+      <span className="b-running" style={{ color: '#9aa2b8' }}>
+        не старт.
+      </span>
+    )
+  return ''
+}
+
+// Колонка «Результат».
+//  • finished — час жирним (.time);
+//  • finished_pending — час жирним + «(обробка)»;
+//  • нефінішер (running/dsq/dns) — якщо в нього вже є час, показуємо його
+//    ЗВИЧАЙНИМ шрифтом (.time-plain), бо це не залік; плюс текст статусу
+//    (причина/«на дистанції»/«не старт.»), який ховаємо на екранах із окремою
+//    колонкою DSQ (там його показує statusCell). Час лишається тут завжди.
+function timeCell({ r, separateLg, separateSm }: CellCtx): React.ReactNode {
+  if (r.status === 'finished') return <span className="time">{r.result_time || ''}</span>
+  if (r.status === 'finished_pending')
+    return (
       <>
         <span className="time">{r.result_time || ''}</span>{' '}
         <span className="b-running" style={{ fontSize: 11 }}>
@@ -42,40 +62,74 @@ function ResultRowView({
         </span>
       </>
     )
-  } else if (r.status === 'running') {
-    time = <span className="b-running">на дистанції</span>
-  } else if (r.status === 'dsq') {
-    // Показуємо причину з U_DAL ("MP", "DNS"…), як на бланку.
-    time = <span className="flag">{r.reason || 'зн.'}</span>
-  } else if (r.status === 'dns') {
-    time = (
-      <span className="b-running" style={{ color: '#9aa2b8' }}>
-        не старт.
-      </span>
-    )
-  }
-
+  // Статус ховається там, де розділено (його покаже окрема колонка).
+  const statusCls = `${separateLg ? 'hide-lg' : ''} ${separateSm ? 'hide-sm' : ''}`.trim()
   return (
-    <tr className={fav ? 'fav-row' : ''}>
-      <td className="col-star">
-        <StarButton active={fav} onToggle={() => onToggleFav(r.bib)} />
-      </td>
-      <td className="rk">{rk}</td>
-      <td>{r.full_name}</td>
-      <td className="col-bib">{r.bib || ''}</td>
-      <td>{r.team || ''}</td>
-      <td className="col-club">{r.club || ''}</td>
-      <td className="time col-start" style={{ fontWeight: 400 }}>
-        {r.start_time || ''}
-      </td>
-      <td>{time}</td>
-      {showPts && (
-        <td className={`pts${r.points === 100 ? ' win' : ''}`}>
-          {r.points != null ? fmtPts(r.points) : ''}
-        </td>
-      )}
-    </tr>
+    <>
+      {r.result_time && <span className="time-plain">{r.result_time}</span>}
+      {r.result_time && statusText(r) ? ' ' : ''}
+      <span className={statusCls}>{statusText(r)}</span>
+    </>
   )
+}
+
+// Окрема колонка «Статус/DSQ»: усе, що не фініш. Видимість самої колонки
+// (на якому екрані) керується її lg/sm у конфігу.
+function statusCell({ r }: CellCtx): React.ReactNode {
+  return statusText(r)
+}
+
+// Відставання від лідера групи — для будь-кого з відомим часом (зокрема знятих).
+// Нефінішерам (DSQ) показуємо звичайним шрифтом, як і їхній час.
+function gapCell({ r, winnerSec }: CellCtx): React.ReactNode {
+  if (r.result_seconds == null || winnerSec == null) return ''
+  const gap = fmtGap(r.result_seconds - winnerSec)
+  if (!gap) return ''
+  const fin = r.status === 'finished' || r.status === 'finished_pending'
+  return <span className={fin ? 'time' : 'time-plain'}>{gap}</span>
+}
+
+const COLS: Record<string, ColMeta> = {
+  rk: {
+    header: { full: 'Місце', short: 'М' },
+    cls: 'rk',
+    cell: ({ r }) =>
+      r.status === 'finished' ? (
+        <span className={MEDAL[r.rk ?? 0] || ''}>{r.rk || ''}</span>
+      ) : (
+        ''
+      ),
+  },
+  full_name: { header: { full: "Прізвище, ім'я" }, cell: ({ r }) => r.full_name || '' },
+  bib: { header: { full: '№' }, cell: ({ r }) => r.bib || '' },
+  team: { header: { full: 'Регіон' }, cell: ({ r }) => r.team || '' },
+  club: { header: { full: 'Клуб' }, cell: ({ r }) => r.club || '' },
+  start_time: {
+    header: { full: 'Старт' },
+    cell: ({ r }) => (
+      <span className="time" style={{ fontWeight: 400 }}>
+        {r.start_time || ''}
+      </span>
+    ),
+  },
+  result_time: { header: { full: 'Час' }, cell: timeCell },
+  status: { header: { full: 'Статус' }, cell: statusCell },
+  gap: { header: { full: 'Відставання', short: 'Відст.' }, cls: 'time', cell: gapCell },
+  points: {
+    header: { full: 'Бали' },
+    cls: 'pts',
+    cell: ({ r }) => (r.points != null ? fmtPts(r.points) : ''),
+  },
+  birth: { header: { full: 'Рік нар.' }, cell: ({ r }) => r.birth || '' },
+  qual: { header: { full: 'Розряд' }, cell: ({ r }) => r.qual || '' },
+}
+
+// Клас адаптивності: ховаємо колонку на тому екрані, де lg/sm = false.
+function respClass(lg: boolean, sm: boolean): string {
+  const c: string[] = []
+  if (!lg) c.push('hide-lg')
+  if (!sm) c.push('hide-sm')
+  return c.join(' ')
 }
 
 export function ResultsTable({
@@ -84,11 +138,12 @@ export function ResultsTable({
   activeGrp,
   query,
   showPts,
+  cfg,
+  showAll,
   isFav,
   onToggleFav,
 }: Props) {
   const q = query.trim().toLowerCase()
-  // results уже містить лише активну групу (запит фіксує grp), тож не фільтруємо.
   let list = q ? results.filter((r) => matchesQuery(r, q)) : results
 
   if (!list.length) {
@@ -110,6 +165,33 @@ export function ResultsTable({
   }
 
   list = [...list].sort(cmp)
+
+  const conf = cfg ?? DEFAULT_DISPLAY_CONFIG
+  const separateLg = conf.separateDsqLg
+  // «Всі колонки» (малий екран) → поводимось як на великому: і набір колонок,
+  // і логіка розділення DSQ беруться з великого екрана.
+  const separateSm = showAll ? separateLg : conf.separateDsqSm
+
+  // Найкращий час у групі — для колонки відставання.
+  const winnerSec = list.reduce<number | null>((min, r) => {
+    const fin = r.status === 'finished' || r.status === 'finished_pending'
+    if (!fin || r.result_seconds == null) return min
+    return min == null || r.result_seconds < min ? r.result_seconds : min
+  }, null)
+
+  // Активні колонки: за порядком, лише наявні в реєстрі. У режимі «Всі колонки»
+  // малий екран дублює великий (sm := lg). Колонку «Статус/DSQ» показуємо лише
+  // де ввімкнено розділення (lg→separateLg, sm→separateSm). points — лише showPts.
+  const cols = [...conf.columns]
+    .sort((a, b) => a.order - b.order)
+    .map((c) => (showAll ? { ...c, sm: c.lg } : c))
+    .map((c) =>
+      c.key === 'status'
+        ? { ...c, lg: c.lg && separateLg, sm: c.sm && separateSm }
+        : c,
+    )
+    .filter((c) => COLS[c.key] && (c.lg || c.sm))
+    .filter((c) => (c.key === 'points' ? showPts : true))
 
   const g = groups.find((x) => x.name === activeGrp)
   const fin = list.filter(
@@ -133,34 +215,54 @@ export function ResultsTable({
           </>
         )}
       </div>
-      <div className="tbl-scroll">
+      <div className={`tbl-scroll cfg-table${showAll ? ' show-all' : ''}`}>
         <table>
           <thead>
             <tr>
               <th className="col-star" aria-label="Обране"></th>
-              <th className="rk">
-                <span className="th-full">Місце</span>
-                <span className="th-short">М</span>
-              </th>
-              <th>Прізвище, ім'я</th>
-              <th className="col-bib">№</th>
-              <th>Регіон</th>
-              <th className="col-club">Клуб</th>
-              <th className="col-start">Старт</th>
-              <th>Час</th>
-              {showPts && <th className="pts">Бали</th>}
+              {cols.map((c) => {
+                const m = COLS[c.key]
+                const cls = `col-${c.key} ${m.cls ?? ''} ${respClass(c.lg, c.sm)}`.trim()
+                return (
+                  <th key={c.key} className={cls}>
+                    {m.header.short ? (
+                      <>
+                        <span className="th-full">{m.header.full}</span>
+                        <span className="th-short">{m.header.short}</span>
+                      </>
+                    ) : (
+                      m.header.full
+                    )}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
-            {list.map((r) => (
-              <ResultRowView
-                key={r.bib}
-                r={r}
-                showPts={showPts}
-                fav={isFav(r.bib)}
-                onToggleFav={onToggleFav}
-              />
-            ))}
+            {list.map((r) => {
+              const fav = isFav(r.bib)
+              const ctx: CellCtx = { r, separateLg, separateSm, winnerSec }
+              return (
+                <tr key={r.bib} className={fav ? 'fav-row' : ''}>
+                  <td className="col-star">
+                    <StarButton active={fav} onToggle={() => onToggleFav(r.bib)} />
+                  </td>
+                  {cols.map((c) => {
+                    const m = COLS[c.key]
+                    // pts-клітинка має модифікатор win для 100 балів — як раніше.
+                    const extra =
+                      c.key === 'points' && r.points === 100 ? ' win' : ''
+                    const cls =
+                      `col-${c.key} ${m.cls ?? ''}${extra} ${respClass(c.lg, c.sm)}`.trim()
+                    return (
+                      <td key={c.key} className={cls}>
+                        {m.cell(ctx)}
+                      </td>
+                    )
+                  })}
+                </tr>
+              )
+            })}
           </tbody>
         </table>
       </div>

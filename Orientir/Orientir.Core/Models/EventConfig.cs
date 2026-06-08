@@ -12,7 +12,11 @@ public class EventConfig
     public string Title { get; set; } = "";
     public string Subtitle { get; set; } = "";
     public string BasePath { get; set; } = "";  // тека змагання
-    public bool Standings { get; set; } = false; // вмикає бали + вкладку «Сума» на сторінці
+    public bool Points { get; set; } = false;    // рахувати/показувати бали
+    public bool Standings { get; set; } = false; // вмикає вкладку «Сума» (залік); активна лише разом із Points
+    public bool SeparateDsqLg { get; set; } = false; // розділяти час та колонку «Статус/DSQ» на великому екрані
+    public bool SeparateDsqSm { get; set; } = false; // те саме на малому екрані
+    public string DisplayConfigJson { get; set; } = ""; // конфіг колонок (порожньо = типові)
     public int? ActiveDay { get; set; } = null;  // якщо задано — щотакту шлемо результати ЛИШЕ цього дня
     public bool IsActive { get; set; } = false;  // публікувати при «Старт» лише позначені змагання
 

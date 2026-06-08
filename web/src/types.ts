@@ -26,7 +26,7 @@ export const STATUS_ORDER: Record<string, number> = {
 // в усіх рядках однакове й відоме заздалегідь. day лишаємо — у режимі «Сума»
 // тягнемо групу за ВСІ дні й розрізняємо рядки саме за day.
 export const RES_COLS =
-  'bib,day,rk,full_name,team,club,status,reason,start_time,result_time,result_seconds,points,updated_at';
+  'bib,day,rk,full_name,team,club,status,reason,start_time,result_time,result_seconds,points,birth,qual,updated_at';
 
 // Для виду «Обрані» тягнемо ще й grp — учасники зібрані з різних груп, тож треба
 // показати, з якої кожен (звичайні запити grp не тягнуть навмисно — він сталий
@@ -61,8 +61,56 @@ export interface EventRow {
   id: string;
   title: string | null;
   subtitle: string | null;
-  standings: boolean | null;
+  standings: boolean | null; // вкладка «Сума» (залік)
+  points: boolean | null; // показувати колонку «Бали»
+  display_config: DisplayConfig | null; // конфіг колонок (null = типові)
 }
+
+// Конфіг однієї колонки таблиці результатів.
+export interface ColumnConfig {
+  key: string;
+  order: number;
+  lg: boolean; // показувати на великому екрані
+  sm: boolean; // показувати на малому екрані
+}
+
+// Повний конфіг відображення (дзеркало DisplayConfig у .NET / events.display_config).
+export interface DisplayConfig {
+  version: number;
+  points: boolean;
+  standings: boolean;
+  // Розділення «Результат» / «Статус(DSQ)» окремо для великого й малого екрана.
+  separateDsqLg: boolean;
+  separateDsqSm: boolean;
+  columns: ColumnConfig[];
+}
+
+// Типовий конфіг — 1:1 із колишнім жорстко зашитим layout'ом (коли
+// display_config === null). Мусить 1:1 збігатися з DisplayConfig.Default() у .NET.
+// За замовчуванням: розділення «Результат»/«Статус» на великому екрані; gap одразу
+// після result_time; № / старт / клуб / відставання / статус — лише на великому;
+// birth/qual/бали — вимкнені.
+export const DEFAULT_DISPLAY_CONFIG: DisplayConfig = {
+  version: 1,
+  points: false,
+  standings: false,
+  separateDsqLg: true,
+  separateDsqSm: false,
+  columns: [
+    { key: 'rk', order: 0, lg: true, sm: true },
+    { key: 'full_name', order: 1, lg: true, sm: true },
+    { key: 'bib', order: 2, lg: true, sm: false },
+    { key: 'birth', order: 3, lg: false, sm: false },
+    { key: 'qual', order: 4, lg: false, sm: false },
+    { key: 'team', order: 5, lg: true, sm: true },
+    { key: 'club', order: 6, lg: true, sm: false },
+    { key: 'start_time', order: 7, lg: true, sm: false },
+    { key: 'result_time', order: 8, lg: true, sm: true },
+    { key: 'gap', order: 9, lg: true, sm: false },
+    { key: 'status', order: 10, lg: true, sm: false },
+    { key: 'points', order: 11, lg: true, sm: false },
+  ],
+};
 
 export interface EventDay {
   day: number;
@@ -89,6 +137,8 @@ export interface ResultRow {
   result_time: string | null;
   result_seconds: number | null;
   points: number | null;
+  birth: string | null; // рік народження (GR)
+  qual: string | null; // розряд (KVAL)
   updated_at: string;
   // Назва групи. Тягнемо лише для виду «Обрані» (RES_COLS_FAV); інакше undefined.
   grp?: string | null;

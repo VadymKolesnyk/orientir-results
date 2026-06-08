@@ -24,6 +24,11 @@ public class SettingsService : IDisposable
     private void EnsureSchema()
     {
         TryAddColumn("Events", "IsActive", "INTEGER NOT NULL DEFAULT 0");
+        TryAddColumn("Events", "Points", "INTEGER NOT NULL DEFAULT 0");
+        TryAddColumn("Events", "SeparateDsqLg", "INTEGER NOT NULL DEFAULT 0");
+        TryAddColumn("Events", "SeparateDsqSm", "INTEGER NOT NULL DEFAULT 0");
+        TryAddColumn("Events", "DisplayConfigJson", "TEXT NOT NULL DEFAULT ''");
+        TryAddColumn("Settings", "DefaultDisplayConfigJson", "TEXT NOT NULL DEFAULT ''");
     }
 
     private void TryAddColumn(string table, string column, string type)
@@ -65,7 +70,17 @@ public class SettingsService : IDisposable
             existing.ServiceRoleKey = settings.ServiceRoleKey;
             existing.IntervalSeconds = settings.IntervalSeconds;
             existing.PublicBaseUrl  = settings.PublicBaseUrl;
+            // DefaultDisplayConfigJson лишаємо як є — його змінює лише SetDefaultDisplayConfig
+            // (форма «Налаштування» не редагує типовий вигляд колонок).
         }
+        _db.SaveChanges();
+    }
+
+    // Зберігає переданий JSON як глобальний типовий вигляд колонок.
+    public void SetDefaultDisplayConfig(string json)
+    {
+        var s = GetSettings();
+        s.DefaultDisplayConfigJson = json ?? "";
         _db.SaveChanges();
     }
 
@@ -103,6 +118,31 @@ public class SettingsService : IDisposable
         _db.SaveChanges();
     }
 
+    // -- Синхронізація з сервера (сервер → локально) ------------------------
+    // Накладає налаштування змагання з Supabase на локальний рядок. Машинно-
+    // специфічне (BasePath, Slug, IsActive, ActiveDay) і секрети НЕ чіпаємо.
+    // Підписи днів оновлюємо за номером дня, якщо такий день є локально.
+    public void ApplyRemoteSettings(EventConfig local, RemoteEventSettings remote)
+    {
+        var ev = _db.Events.Include(e => e.Days).FirstOrDefault(e => e.Id == local.Id);
+        if (ev is null) return;
+
+        ev.Title       = remote.Title ?? ev.Title;
+        ev.Subtitle    = remote.Subtitle ?? "";
+        ev.Points        = remote.Points;
+        ev.Standings     = remote.Points && remote.Standings; // Сума лише разом із балами
+        ev.SeparateDsqLg = remote.SeparateDsqLg;
+        ev.SeparateDsqSm = remote.SeparateDsqSm;
+        ev.DisplayConfigJson = remote.DisplayConfigJson ?? "";
+
+        if (remote.DayLabels is { Count: > 0 })
+            foreach (var d in ev.Days)
+                if (remote.DayLabels.TryGetValue(d.Day, out var lbl) && !string.IsNullOrWhiteSpace(lbl))
+                    d.Label = lbl;
+
+        _db.SaveChanges();
+    }
+
     // -- Імпорт зі старого appsettings.json ---------------------------------
     // Викликати при старті: якщо БД порожня й поруч є appsettings.json — перенести.
     public bool ImportLegacyIfEmpty(string appsettingsPath)
@@ -132,6 +172,8 @@ public class SettingsService : IDisposable
                     Title     = le.Title ?? "",
                     Subtitle  = le.Subtitle ?? "",
                     BasePath  = le.BasePath ?? "",
+                    // Старий Standings означав «бали + Сума» — переносимо в обидва прапорці.
+                    Points    = le.Standings ?? false,
                     Standings = le.Standings ?? false,
                     ActiveDay = le.ActiveDay,
                     Days = (le.Days ?? new()).Select(ld => new DayConfig

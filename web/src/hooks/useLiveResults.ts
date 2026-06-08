@@ -222,7 +222,7 @@ export function useLiveResults(args: Args) {
     // Легкі метадані: групи дня, саме змагання, дні.
     const [rGrp, rEv, rDays] = await Promise.all([
       sb.from('groups').select(GRP_COLS).eq('event', eventId).eq('day', day),
-      sb.from('events').select('id,title,subtitle,standings').eq('id', eventId).maybeSingle(),
+      sb.from('events').select('id,title,subtitle,standings,points,display_config').eq('id', eventId).maybeSingle(),
       sb.from('event_days').select('day,label,ord').eq('event', eventId).order('ord'),
     ])
     const err = rGrp.error || rEv.error || rDays.error

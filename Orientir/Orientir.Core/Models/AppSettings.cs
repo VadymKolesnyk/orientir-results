@@ -13,6 +13,11 @@ public class AppSettings
     public int IntervalSeconds { get; set; } = 10;
     public string PublicBaseUrl { get; set; } = "";
 
+    // Глобальний «типовий вигляд» колонок (JSON DisplayConfig). Підставляється
+    // для нових змагань, де власний DisplayConfigJson порожній. Порожньо → вшитий
+    // DisplayConfig.Default().
+    public string DefaultDisplayConfigJson { get; set; } = "";
+
     // Чи коректно заповнено ключі для бойового запуску (не плейсхолдери).
     public bool IsReadyForLive() =>
         !string.IsNullOrWhiteSpace(SupabaseUrl) && !SupabaseUrl.Contains("ВАШ") &&

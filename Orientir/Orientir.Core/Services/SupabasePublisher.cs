@@ -38,23 +38,8 @@ public class SupabasePublisher
             {
                 try
                 {
-                    await Push("events", "id", new() { new()
-                    {
-                        ["id"]         = ev.Slug,
-                        ["title"]      = ev.Title,
-                        ["subtitle"]   = NullIfEmpty(ev.Subtitle),
-                        ["days_count"] = days.Count,
-                        ["standings"]  = ev.Standings,
-                        ["updated_at"] = DateTime.UtcNow.ToString("o"),
-                    }}, ct);
-                    await Push("event_days", "event,day",
-                        days.Select((d, i) => new Dictionary<string, object?>
-                        {
-                            ["event"] = ev.Slug,
-                            ["day"]   = d.Day,
-                            ["label"] = NullIfEmpty(d.Label),
-                            ["ord"]   = i,
-                        }).ToList(), ct);
+                    await Push("events", "id", new() { BuildEventRow(ev, days.Count) }, ct);
+                    await Push("event_days", "event,day", BuildDayRows(ev, days), ct);
                     _metaSent.Add(ev.Slug);
                     log?.Report($"[{Now()}] {ev.Slug}: змагання + {days.Count} дн. зареєстровано");
                     // Лінки у hash-форматі фронту: {base}/#/{event}/{d1|d2|sum}.
@@ -112,6 +97,56 @@ public class SupabasePublisher
                 }
             }
         }
+    }
+
+    // ---------------------------------------------------------------------
+    //  Синхронізація налаштувань (локально → сервер) для ОДНОГО змагання.
+    //  Шлемо лише events + event_days (без результатів), ігноруючи кеш _metaSent.
+    //  days_count беремо з ev.Days (а не ResolveDays), щоб не падати, якщо тека
+    //  недоступна на цій машині.
+    // ---------------------------------------------------------------------
+    public async Task PushEventSettingsAsync(EventConfig ev, CancellationToken ct = default)
+    {
+        var days = ev.Days.OrderBy(d => d.Day).ToList();
+        await Push("events", "id", new() { BuildEventRow(ev, days.Count) }, ct);
+        if (days.Count > 0)
+            await Push("event_days", "event,day", BuildDayRows(ev, days), ct);
+        // Наступний такт публікації перешле метадані заново (бо могли змінитись).
+        _metaSent.Remove(ev.Slug);
+    }
+
+    // Рядок таблиці events із прапорцями та конфігом колонок.
+    private static Dictionary<string, object?> BuildEventRow(EventConfig ev, int daysCount) => new()
+    {
+        ["id"]             = ev.Slug,
+        ["title"]          = ev.Title,
+        ["subtitle"]       = NullIfEmpty(ev.Subtitle),
+        ["days_count"]     = daysCount,
+        ["standings"]      = ev.Standings,
+        ["points"]         = ev.Points,
+        ["display_config"] = BuildDisplayConfig(ev),
+        ["updated_at"]     = DateTime.UtcNow.ToString("o"),
+    };
+
+    private static List<Dictionary<string, object?>> BuildDayRows(EventConfig ev, List<DayConfig> days) =>
+        days.Select((d, i) => new Dictionary<string, object?>
+        {
+            ["event"] = ev.Slug,
+            ["day"]   = d.Day,
+            ["label"] = NullIfEmpty(d.Label),
+            ["ord"]   = i,
+        }).ToList();
+
+    // Розбираємо збережений JSON у JsonElement (щоб коректно лягло у jsonb),
+    // інакше null. Зіставляємо прапорці з полями змагання — джерело правди тут.
+    private static object? BuildDisplayConfig(EventConfig ev)
+    {
+        var cfg = DisplayConfig.Parse(ev.DisplayConfigJson) ?? DisplayConfig.Default();
+        cfg.Points = ev.Points;
+        cfg.Standings = ev.Standings;
+        cfg.SeparateDsqLg = ev.SeparateDsqLg;
+        cfg.SeparateDsqSm = ev.SeparateDsqSm;
+        return JsonSerializer.Deserialize<JsonElement>(cfg.Serialize());
     }
 
     // ---------------------------------------------------------------------

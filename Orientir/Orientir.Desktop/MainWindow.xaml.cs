@@ -105,7 +105,6 @@ public partial class MainWindow : Window
         TxtEvTitle.Text     = ev?.Title ?? "";
         TxtEvSubtitle.Text  = ev?.Subtitle ?? "";
         TxtEvBasePath.Text  = ev?.BasePath ?? "";
-        ChkStandings.IsChecked = ev?.Standings ?? false;
         TxtEvActiveDay.Text = ev?.ActiveDay?.ToString() ?? "";
     }
 
@@ -137,11 +136,28 @@ public partial class MainWindow : Window
         int? activeDay = int.TryParse(TxtEvActiveDay.Text.Trim(), out var ad) ? ad : (int?)null;
         bool isNew = _current is null;
         var ev = _current ?? new EventConfig();
+        // Нове змагання успадковує глобальний типовий вигляд колонок (якщо заданий).
+        if (isNew && string.IsNullOrWhiteSpace(ev.DisplayConfigJson))
+        {
+            var def = _settings.GetSettings().DefaultDisplayConfigJson;
+            if (!string.IsNullOrWhiteSpace(def))
+            {
+                ev.DisplayConfigJson = def;
+                var cfg = DisplayConfig.Parse(def);
+                if (cfg is not null)
+                {
+                    ev.Points        = cfg.Points;
+                    ev.Standings     = cfg.Points && cfg.Standings;
+                    ev.SeparateDsqLg = cfg.SeparateDsqLg;
+                    ev.SeparateDsqSm = cfg.SeparateDsqSm;
+                }
+            }
+        }
         ev.Slug      = TxtEvSlug.Text.Trim();
         ev.Title     = TxtEvTitle.Text.Trim();
         ev.Subtitle  = TxtEvSubtitle.Text.Trim();
         ev.BasePath  = TxtEvBasePath.Text.Trim();
-        ev.Standings = ChkStandings.IsChecked == true;
+        // Бали/Сума/DSQ/колонки редагуються у «Додаткові налаштування» — тут не чіпаємо.
         ev.ActiveDay = activeDay;
 
         if (isNew)
@@ -208,6 +224,83 @@ public partial class MainWindow : Window
         {
             _settings.SaveEventDays(ev);
             ReloadEvents();
+        }
+    }
+
+    // Діалог додаткових налаштувань (бали/сума/DSQ + колонки). Працює на
+    // збереженому змаганні; зміни одразу пишемо в БД.
+    private void AdvancedSettings_Click(object sender, RoutedEventArgs e)
+    {
+        if (_current is null || _current.Id == 0)
+        {
+            MessageBox.Show("Спершу оберіть і збережіть змагання.", "Orientir");
+            return;
+        }
+        var ev = _settings.GetEvents().First(x => x.Id == _current.Id);
+        var win = new AdvancedSettingsWindow(ev, _settings) { Owner = this };
+        if (win.ShowDialog() == true)
+        {
+            _settings.UpdateEvent(ev);
+            _current = ev;
+            ReloadEvents();
+            GridEvents.SelectedItem = _settings.GetEvents().FirstOrDefault(x => x.Id == ev.Id);
+        }
+    }
+
+    // ====================================================================
+    //  Синхронізація налаштувань ОДНОГО змагання з сервером
+    // ====================================================================
+    private async void SyncEvent_Click(object sender, RoutedEventArgs e)
+    {
+        if (_current is null || _current.Id == 0)
+        {
+            MessageBox.Show("Оберіть змагання у таблиці.", "Orientir");
+            return;
+        }
+        var s = _settings.GetSettings();
+        if (!s.IsReadyForLive())
+        {
+            MessageBox.Show("Заповніть SupabaseUrl / ServiceRoleKey на вкладці «Налаштування».",
+                "Orientir", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var ev = _settings.GetEvents().First(x => x.Id == _current.Id);
+        var dir = new SyncDirectionWindow(ev.Slug) { Owner = this };
+        if (dir.ShowDialog() != true) return;
+
+        using var http = new System.Net.Http.HttpClient();
+        try
+        {
+            if (dir.ToServer)
+            {
+                var pub = new SupabasePublisher(http, s);
+                await pub.PushEventSettingsAsync(ev);
+                MessageBox.Show($"Налаштування «{ev.Slug}» вивантажено на сервер.",
+                    "Orientir", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            else
+            {
+                var client = new SupabaseSettingsClient(http, s);
+                var remote = await client.GetEventSettingsAsync(ev.Slug);
+                if (remote is null)
+                {
+                    MessageBox.Show($"На сервері немає змагання «{ev.Slug}».",
+                        "Orientir", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                _settings.ApplyRemoteSettings(ev, remote);
+                ReloadEvents();
+                GridEvents.SelectedItem = _settings.GetEvents().FirstOrDefault(x => x.Id == ev.Id);
+                MessageBox.Show($"Налаштування «{ev.Slug}» завантажено з сервера.\n" +
+                                "(Шлях до теки лишився локальним.)",
+                    "Orientir", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Помилка синхронізації:\n{ex.Message}",
+                "Orientir", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 

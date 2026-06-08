@@ -120,7 +120,8 @@ internal class MenuScreens
         };
         Console.WriteLine("\nШлях до теки змагання:");
         ev.BasePath  = ConsoleInput.ReadPathInput();
-        ev.Standings = PromptBool("Рахувати бали (вкладка «Сума»)?", false);
+        ev.Points    = PromptBool("Рахувати бали?", false);
+        ev.Standings = ev.Points && PromptBool("Показувати вкладку «Сума» (залік)?", false);
         ev.ActiveDay = PromptIntOrNull("Активний день (Enter = усі дні)");
 
         if (string.IsNullOrWhiteSpace(ev.Slug) || string.IsNullOrWhiteSpace(ev.BasePath))
@@ -192,7 +193,7 @@ internal class MenuScreens
             ConsoleInput.WriteLine($"  Назва: {ev.Title}");
             ConsoleInput.WriteLine($"  Підзаголовок: {ev.Subtitle}");
             ConsoleInput.WriteLine($"  Шлях: {ev.BasePath}");
-            ConsoleInput.WriteLine($"  Бали: {(ev.Standings ? "так" : "ні")}    Активний день: {(ev.ActiveDay?.ToString() ?? "усі")}");
+            ConsoleInput.WriteLine($"  Бали: {(ev.Points ? "так" : "ні")}    Сума: {(ev.Standings ? "так" : "ні")}    Активний день: {(ev.ActiveDay?.ToString() ?? "усі")}");
             ConsoleInput.WriteLine($"  Активне (для публікації): {(ev.IsActive ? "так" : "ні")}");
             ConsoleInput.WriteLine($"  Дні ({ev.Days.Count}): " +
                 string.Join(", ", ev.Days.OrderBy(d => d.Day).Select(d => $"{d.Day}={d.Folder}/{d.Label}")));
@@ -228,7 +229,8 @@ internal class MenuScreens
         Console.WriteLine($"Поточний шлях: {ev.BasePath}");
         if (PromptBool("Змінити шлях?", false))
             ev.BasePath = ConsoleInput.ReadPathInput(ev.BasePath);
-        ev.Standings = PromptBool("Рахувати бали?", ev.Standings);
+        ev.Points    = PromptBool("Рахувати бали?", ev.Points);
+        ev.Standings = ev.Points && PromptBool("Показувати вкладку «Сума» (залік)?", ev.Standings);
         ev.ActiveDay = PromptIntOrNull($"Активний день (Enter = усі){(ev.ActiveDay is int a ? $", зараз {a}" : "")}");
         _settings.UpdateEvent(ev);
         Console.WriteLine("\nЗбережено. Натисніть будь-яку клавішу...");
