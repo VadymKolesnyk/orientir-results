@@ -219,9 +219,14 @@ export function useLiveResults(args: Args) {
     }
     if (showLoading) setState((s) => (s.loading ? s : { ...s, loading: true }))
 
-    // Легкі метадані: групи дня, саме змагання, дні.
+    // Легкі метадані: групи, саме змагання, дні.
+    // У режимі «Сума» вкладки = об'єднання груп УСІХ днів: група могла бігти
+    // не кожен день, а залік однаково рахується за всі дні. Поза «Сумою» —
+    // лише групи поточного дня.
+    let qGrp = sb.from('groups').select(GRP_COLS).eq('event', eventId)
+    if (!sumMode) qGrp = qGrp.eq('day', day)
     const [rGrp, rEv, rDays] = await Promise.all([
-      sb.from('groups').select(GRP_COLS).eq('event', eventId).eq('day', day),
+      qGrp,
       sb.from('events').select('id,title,subtitle,standings,points,display_config').eq('id', eventId).maybeSingle(),
       sb.from('event_days').select('day,label,ord').eq('event', eventId).order('ord'),
     ])

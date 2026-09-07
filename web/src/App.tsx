@@ -317,7 +317,12 @@ export function App() {
 
         <div id="content">{content}</div>
 
-        <UpdatedFooter results={state.results} offline={state.offline} />
+        {/* У «Сумі» група може не бігти поточного дня — тоді results порожні,
+            а час оновлення беремо з усіх днів (allResults). */}
+        <UpdatedFooter
+          results={sumMode ? state.allResults : state.results}
+          offline={state.offline}
+        />
       </div>
     </div>
   )
