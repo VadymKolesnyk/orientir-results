@@ -11,6 +11,7 @@ import { SearchBox } from './components/SearchBox'
 import { ShowAllToggle } from './components/ShowAllToggle'
 import { GroupTabs } from './components/GroupTabs'
 import { ResultsTable } from './components/ResultsTable'
+import { RelayTable } from './components/RelayTable'
 import { SummaryTable } from './components/SummaryTable'
 import { FavoritesList } from './components/FavoritesList'
 import { UpdatedFooter } from './components/UpdatedFooter'
@@ -152,6 +153,8 @@ export function App() {
   }, [state.event])
 
   const favView = activeGrp === FAV_GRP
+  // Група-естафета: OrientPyx публікує її командами (relay_teams), не в results.
+  const relayView = !sumMode && !favView && state.teams.length > 0
 
   // --- Метарядок під заголовком ---
   const meta = useMemo(() => {
@@ -161,10 +164,11 @@ export function App() {
       return sumMode
         ? `${sub}Обрані · Залік за всі дні`
         : `${sub}Обрані · День ${day} · учасників: ${state.results.length}`
+    if (relayView) return `${sub}День ${day} · команд: ${state.teams.length}`
     return sumMode
       ? `${sub}Залік за всі дні`
       : `${sub}День ${day} · учасників: ${state.results.length}`
-  }, [state.event, state.results.length, sumMode, day, favView])
+  }, [state.event, state.results.length, state.teams.length, sumMode, day, favView, relayView])
 
   // Бали показуємо за прапорцем points; вкладка «Сума» — за standings (нижче).
   const showPts = !!state.event?.points
@@ -271,6 +275,16 @@ export function App() {
         onToggleFav={toggleFav}
       />
     )
+  } else if (relayView) {
+    content = (
+      <RelayTable
+        teams={state.teams}
+        groups={state.groups}
+        activeGrp={activeGrp}
+        query={query}
+        showPts={showPts}
+      />
+    )
   } else {
     content = (
       <ResultsTable
@@ -320,7 +334,7 @@ export function App() {
         {/* У «Сумі» група може не бігти поточного дня — тоді results порожні,
             а час оновлення беремо з усіх днів (allResults). */}
         <UpdatedFooter
-          results={sumMode ? state.allResults : state.results}
+          results={sumMode ? state.allResults : relayView ? state.teams : state.results}
           offline={state.offline}
         />
       </div>

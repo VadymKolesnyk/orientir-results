@@ -3,12 +3,13 @@ import type { RealtimeChannel } from '@supabase/supabase-js'
 import { sb } from '../lib/supabase'
 import { groupNames } from '../lib/results'
 import { FAV_GRP } from '../lib/favorites'
-import { RES_COLS, RES_COLS_FAV, SYNC_COLS, GRP_COLS } from '../types'
+import { RES_COLS, RES_COLS_FAV, SYNC_COLS, GRP_COLS, RELAY_COLS } from '../types'
 import type {
   EventRow,
   EventDay,
   GroupRow,
   ResultRow,
+  RelayTeamRow,
   SyncRow,
 } from '../types'
 
@@ -39,6 +40,9 @@ export interface LiveState {
   groups: GroupRow[]
   results: ResultRow[]
   allResults: ResultRow[]
+  // Команди активної групи-естафети (relay_teams) за поточний день; порожньо
+  // для звичайних груп, «Суми» й «Обраних».
+  teams: RelayTeamRow[]
   offline: boolean
   loading: boolean
   error: string | null
@@ -61,6 +65,7 @@ export function useLiveResults(args: Args) {
     groups: [],
     results: [],
     allResults: [],
+    teams: [],
     offline: false,
     loading: true,
     error: null,
@@ -142,8 +147,11 @@ export function useLiveResults(args: Args) {
   // Стежимо за «свіжістю»: остання зміна давніша за пів години → офлайн.
   // Інакше — лічильник застою (updated_at не рухається N опитувань поспіль).
   const checkStale = useCallback(
-    (allResults: ResultRow[], results: ResultRow[]) => {
-      const src = allResults.length ? allResults : results
+    (allResults: ResultRow[], results: ResultRow[], teams: RelayTeamRow[] = []) => {
+      // Група-естафета не має рядків results — свіжість беремо з її команд.
+      const src: { updated_at: string }[] = allResults.length
+        ? allResults
+        : [...results, ...teams]
       const cur = src.reduce((m, r) => (r.updated_at > m ? r.updated_at : m), '')
       if (!cur) return // ще немає даних — стан не чіпаємо
 
@@ -208,6 +216,20 @@ export function useLiveResults(args: Args) {
     [fetchFavorites],
   )
 
+  // Команди групи-естафети поточного дня. Таблиці relay_teams може не бути
+  // (проєкт без естафет) — помилку запиту тихо трактуємо як «команд немає».
+  const fetchTeams = useCallback(async (grp: string): Promise<RelayTeamRow[]> => {
+    if (!grp || grp === FAV_GRP) return []
+    const { eventId, day } = argsRef.current
+    const r = await sb
+      .from('relay_teams')
+      .select(RELAY_COLS)
+      .eq('event', eventId)
+      .eq('day', day)
+      .eq('grp', grp)
+    return r.error ? [] : ((r.data as unknown as RelayTeamRow[]) || [])
+  }, [])
+
   // showLoading=true піднімає спінер на час запиту — для «навігаційних»
   // перезапитів (перше завантаження, зміна дня/режиму). Фоновий polling/realtime
   // викликає load() без прапорця, щоб не блимати поверх уже показаних даних.
@@ -253,6 +275,7 @@ export function useLiveResults(args: Args) {
 
     let allResults: ResultRow[] = []
     let results: ResultRow[] = []
+    let teams: RelayTeamRow[] = []
     if (effSum && grp === FAV_GRP) {
       // «Обрані» + «Сума»: залік за всі дні для обраних bib (з усіх груп).
       allResults = await fetchFavorites(true)
@@ -268,21 +291,25 @@ export function useLiveResults(args: Args) {
       results = allResults.filter((r) => r.day === day)
     } else {
       // Звичайна група або «Обрані» за день (fetchGroup розрізняє FAV_GRP).
-      results = grp ? await fetchGroup(grp) : []
+      // Паралельно — команди, якщо група естафетна (для інших — порожньо).
+      if (grp) {
+        [results, teams] = await Promise.all([fetchGroup(grp), fetchTeams(grp)])
+      }
     }
 
-    checkStale(allResults, results)
+    checkStale(allResults, results, teams)
     setState({
       event,
       eventDays,
       groups,
       results,
       allResults,
+      teams,
       offline: offlineRef.current,
       loading: false,
       error: null,
     })
-  }, [checkStale, fetchGroup, fetchFavorites])
+  }, [checkStale, fetchGroup, fetchFavorites, fetchTeams])
 
   // Фонове оновлення (polling/realtime): тягнемо ЛИШЕ змінні поля (SYNC_COLS)
   // активної групи й накладаємо їх на вже завантажені рядки — сталі поля
@@ -312,7 +339,11 @@ export function useLiveResults(args: Args) {
     let q = sb.from('results').select(SYNC_COLS).eq('event', eventId)
     q = fav ? q.in('bib', favBibs) : q.eq('grp', grp)
     if (!effSum) q = q.eq('day', day)
-    const rSync = await q
+    // Команди естафети (лише день, не «Обрані») — цілими рядками: їх мало.
+    const [rSync, teams] = await Promise.all([
+      q,
+      !effSum && !fav ? fetchTeams(grp) : Promise.resolve<RelayTeamRow[]>([]),
+    ])
     if (rSync.error) return // тихо: фоновий sync не показує помилок
     const syncRows = (rSync.data as SyncRow[]) || []
 
@@ -355,14 +386,15 @@ export function useLiveResults(args: Args) {
     const allResults = effSum ? merged : []
     const results = effSum ? merged.filter((r) => r.day === day) : merged
 
-    checkStale(allResults, results)
+    checkStale(allResults, results, teams)
     setState((s) => ({
       ...s,
       results,
       allResults,
+      teams,
       offline: offlineRef.current,
     }))
-  }, [checkStale])
+  }, [checkStale, fetchTeams])
 
   // Перемикання групи: дотягуємо результати лише цієї групи, потім рендеримо.
   const switchGroup = useCallback(
@@ -390,15 +422,17 @@ export function useLiveResults(args: Args) {
           ...s,
           allResults,
           results: allResults.filter((x) => x.day === day),
+          teams: [],
           loading: false,
         }))
       } else {
-        // Звичайна група або «Обрані» за день (fetchGroup розрізняє FAV_GRP).
-        const results = await fetchGroup(grp)
-        setState((s) => ({ ...s, results, allResults: [], loading: false }))
+        // Звичайна група або «Обрані» за день (fetchGroup розрізняє FAV_GRP);
+        // паралельно — команди, якщо група естафетна.
+        const [results, teams] = await Promise.all([fetchGroup(grp), fetchTeams(grp)])
+        setState((s) => ({ ...s, results, allResults: [], teams, loading: false }))
       }
     },
-    [fetchGroup, fetchFavorites],
+    [fetchGroup, fetchFavorites, fetchTeams],
   )
 
   // Ручне перепідключення (клік по «офлайн»): вмикаємо live назад, скидаємо

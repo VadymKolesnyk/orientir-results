@@ -143,3 +143,53 @@ export interface ResultRow {
   // Назва групи. Тягнемо лише для виду «Обрані» (RES_COLS_FAV); інакше undefined.
   grp?: string | null;
 }
+
+// --- Естафета (таблиця relay_teams) ---------------------------------------
+// Групи-естафети OrientPyx пише НЕ в results (номер етапу «100.2» не цілий bib),
+// а окремим рядком на команду з етапами в jsonb. Контракт — OrientPyx
+// docs/online-snapshot.md. Таблиці може не бути (старий проєкт) — тоді фронт
+// просто не бачить команд і показує групу як звичайну.
+
+// Статус етапу: як у results + «pending» (попередній етап ще без фінішу).
+export type LegStatus = Status | 'pending'
+
+export interface RelayLeg {
+  leg: number
+  bib: string // «100.2»
+  full_name: string | null // null — етап без бігуна
+  birth: string | null
+  course: string | null // призначена дистанція етапу (null — одна на групу)
+  leg_time: string | null // фактичний час етапу
+  cumulative: string | null // наростаючий (скоригований) час команди
+  status: LegStatus
+  reason: string | null
+  restarted: boolean
+  extra: Record<string, string> | null // значення колонок плагіна за key
+}
+
+export interface RelayColumn {
+  key: string
+  label: string
+}
+
+export interface RelayTeamRow {
+  num: number
+  rk: number | null
+  name: string | null
+  club: string | null
+  region: string | null
+  result_time: string | null
+  result_seconds: number | null
+  points: number | null
+  status: Status
+  reason: string | null
+  out_of_competition: boolean | null
+  restarted: boolean | null
+  columns: RelayColumn[] | null
+  legs: RelayLeg[] | null
+  updated_at: string
+}
+
+// Команди однієї групи дня — тягнемо все потрібне одним запитом (рядків мало).
+export const RELAY_COLS =
+  'num,rk,name,club,region,result_time,result_seconds,points,status,reason,out_of_competition,restarted,columns,legs,updated_at'

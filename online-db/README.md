@@ -24,7 +24,9 @@
 
 1. https://supabase.com → **New project** (запиши пароль БД).
 2. **SQL Editor → New query** → встав вміст `schema.sql` → **Run**.
-   Створяться таблиці `events`, `event_days`, `groups`, `results` з RLS.
+   Створяться таблиці `events`, `event_days`, `groups`, `results`, `relay_teams` з RLS.
+   `relay_teams` — команди естафет з OrientPyx (рядок на команду, етапи в jsonb);
+   на вже наявній БД досить додати лише її — інструкція внизу `schema.sql`.
    ⚠️ Скрипт перестворює таблиці (drop+create) — не запускай повторно поверх
    даних, які треба зберегти.
 3. **Project Settings → API**, скопіюй:

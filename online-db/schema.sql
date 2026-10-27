@@ -8,6 +8,7 @@
 --     які треба зберегти — закоментуй блок DROP нижче.
 -- =====================================================================
 
+drop table if exists public.relay_teams cascade;
 drop table if exists public.results    cascade;
 drop table if exists public.groups     cascade;
 drop table if exists public.event_days cascade;
@@ -90,6 +91,37 @@ create table public.results (
 create index results_grp_idx on public.results (event, day, grp, rk);
 
 -- ---------------------------------------------------------------------
+--  Естафети (OrientPyx). Рядок = команда групи-естафети в дні змагання;
+--  етапи — jsonb-масив legs. Групи-естафети НЕ пишуться в results (номер
+--  етапу «100.2» не цілий bib). Контракт полів — OrientPyx
+--  docs/online-snapshot.md. Таблиця опційна: без неї publisher і сторінка
+--  просто працюють без естафет.
+-- ---------------------------------------------------------------------
+create table public.relay_teams (
+  event              text not null,
+  day                int  not null,
+  num                int  not null,    -- номер команди (унікальний у дні)
+  grp                text,             -- група
+  name               text,
+  club               text,
+  region             text,
+  rk                 int,              -- місце команди (null — без місця)
+  result_time        text,             -- час команди "00:58:05"
+  result_seconds     int,
+  points             numeric,          -- очки команди (однакові всім членам)
+  status             text,             -- як у results
+  reason             text,             -- MP / OVT / DNF / DSQ при status = dsq
+  out_of_competition boolean,          -- «П/К»
+  restarted          boolean,          -- команда з перезапуском
+  columns            jsonb,            -- [{key,label}] колонки плагіна в legs[].extra
+  legs               jsonb,            -- [{leg,bib,full_name,birth,course,leg_time,cumulative,status,reason,restarted,extra}]
+  updated_at         text,
+  primary key (event, day, num)
+);
+
+create index relay_teams_grp_idx on public.relay_teams (event, day, grp);
+
+-- ---------------------------------------------------------------------
 --  RLS: глядачі читають через anon-ключ (тільки SELECT).
 --  Запис іде з publisher через service_role-ключ (обходить RLS).
 -- ---------------------------------------------------------------------
@@ -97,11 +129,13 @@ alter table public.events     enable row level security;
 alter table public.event_days enable row level security;
 alter table public.groups     enable row level security;
 alter table public.results    enable row level security;
+alter table public.relay_teams enable row level security;
 
 create policy "read events"     on public.events     for select to anon using (true);
 create policy "read event_days" on public.event_days for select to anon using (true);
 create policy "read groups"     on public.groups     for select to anon using (true);
 create policy "read results"    on public.results    for select to anon using (true);
+create policy "read relay_teams" on public.relay_teams for select to anon using (true);
 
 -- ---------------------------------------------------------------------
 --  Якщо БД уже існує і таблиці перестворювати НЕ хочеш — додай лише нові
@@ -110,6 +144,11 @@ create policy "read results"    on public.results    for select to anon using (t
 --    alter table public.events  add column if not exists standings boolean not null default false;
 --    alter table public.events  add column if not exists points boolean not null default false;
 --    alter table public.events  add column if not exists display_config jsonb;
+--
+--  Естафети (OrientPyx) на вже наявній БД — виконай окремо блок
+--  «create table public.relay_teams …» + індекс вище, а потім:
+--    alter table public.relay_teams enable row level security;
+--    create policy "read relay_teams" on public.relay_teams for select to anon using (true);
 -- ---------------------------------------------------------------------
 
 -- (Опційно) Realtime — миттєве оновлення сторінки:

@@ -1,7 +1,6 @@
-import type { ResultRow } from '../types'
-
 interface Props {
-  results: ResultRow[]
+  // Будь-які рядки з updated_at: результати учасників або команди естафети.
+  results: { updated_at: string }[]
   offline: boolean
 }
 
